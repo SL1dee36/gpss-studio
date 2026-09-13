@@ -739,16 +739,38 @@ class GPSSStudio(QMainWindow):
         clock = clock_match.group(1) if clock_match else "Н/Д"
         data.append(("Время моделирования (Absolute Clock)", clock, "Общая длительность работы системы в тактах"))
 
-        mem_match = re.search(r"MEM\s+([\d\.]+)\s+(\d+)\s+([\d\.]+)", text)
-        if mem_match:
-            util, entries, avg_time = mem_match.groups()
+        fac_match = re.search(
+            r"Facility\s+Total\s+Avail.*?\n(?:[^\n]*\n)?\s*(\w+)\s+([\d\.]+)\s+(?:[\d\.]+\s+)*(\d+)\s+([\d\.]+)",
+            text,
+            re.IGNORECASE
+        )
+        if not fac_match:
+            fac_match = re.search(
+                r"^[ \t]*(?:MEM|\w+)[ \t]+([\d\.]+)[ \t]+(?:[\d\.]+[ \t]+)*(\d+)[ \t]+([\d\.]+)",
+                text,
+                re.MULTILINE
+            )
+
+        if fac_match:
+            _, util, entries, avg_time = fac_match.groups()
             data.append(("Обработано заявок ОП (Entries)", entries, "Количество заявок, обслуженных памятью"))
             data.append(("Коэффициент загрузки ОП (Avg-Util)", util, "Доля времени занятости памяти (от 0 до 1)"))
             data.append(("Среднее время обработки (Avg Time/Xact)", avg_time, "Время обработки одного запроса памятью (такты)"))
 
-        q_match = re.search(r"AAA\s+(\d+)\s+([\d\.]+)\s+(\d+)\s+\d+\s+[\d\.]+\s+([\d\.]+)", text)
+        q_match = re.search(
+            r"Queue\s+Maximum\s+Average.*?\n(?:[^\n]*\n)?\s*(\w+)\s+(\d+)\s+([\d\.]+)\s+(\d+)\s+\d+\s+[\d\.]+\s+([\d\.]+)",
+            text,
+            re.IGNORECASE
+        )
+        if not q_match:
+            q_match = re.search(
+                r"^[ \t]*(?:AAA|\w+)[ \t]+(\d+)[ \t]+([\d\.]+)[ \t]+(\d+)[ \t]+\d+[ \t]+[\d\.]+[ \t]+([\d\.]+)",
+                text,
+                re.MULTILINE
+            )
+
         if q_match:
-            q_max, q_avg, q_total, q_time = q_match.groups()
+            _, q_max, q_avg, q_total, q_time = q_match.groups()
             data.append(("Всего заявок в очереди (Total Entries)", q_total, "Сколько всего заявок поступило от процессора"))
             data.append(("Макс. длина очереди (Maximum Contents)", q_max, "Пиковое число заявок, ожидавших в очереди"))
             data.append(("Средняя длина очереди (Average Contents)", q_avg, "Среднее количество ожидающих запросов"))
