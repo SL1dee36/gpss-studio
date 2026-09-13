@@ -6,7 +6,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QPlainTextEdit, QLabel, QSplitter, QMessageBox,
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
-    QFrame, QSizePolicy, QLineEdit
+    QFrame, QSizePolicy, QLineEdit, QInputDialog
 )
 from PySide6.QtGui import (
     QFont, QFontMetrics, QKeySequence, QShortcut, QColor, 
@@ -14,15 +14,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtCore import Qt, QRect
 
-CODE_VAR_16 = """GENERATE 13,3
-QUEUE AAA
-SEIZE MEM
-DEPART AAA
-ADVANCE 18
-RELEASE MEM
-TERMINATE 1
-START 20
-END"""
+CODE_VAR_16 = """"""
 
 STYLE_SHEET = """
 QMainWindow {
@@ -170,6 +162,13 @@ class LabelGutter(QWidget):
             top = bottom
             bottom = top + int(self.editor.blockBoundingRect(block).height())
 
+    def edit_block(self, block):
+        if not block or not block.isValid():
+            return
+        top = int(self.editor.blockBoundingGeometry(block).translated(self.editor.contentOffset()).top())
+        h = int(self.editor.blockBoundingRect(block).height())
+        self._start_edit(block, top, h)
+
     def _start_edit(self, block, y, h):
         self.editing_block = block
         ud = block.userData()
@@ -223,11 +222,146 @@ class GPSSCodeEditor(QPlainTextEdit):
         cr = self.contentsRect()
         self.gutter.setGeometry(cr.left(), cr.top(), self.gutter_width(), cr.height())
 
-    def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Tab:
+    def _indent_selection(self, unindent=False):
+        cursor = self.textCursor()
+        if not cursor.hasSelection() and not unindent:
             self.insertPlainText("  ")
-        else:
-            super().keyPressEvent(event)
+            return
+
+        cursor.beginEditBlock()
+        start_block = self.document().findBlock(cursor.selectionStart())
+        end_block = self.document().findBlock(cursor.selectionEnd())
+        b = start_block
+        while True:
+            c = QTextCursor(b)
+            if unindent:
+                text = b.text()
+                if text.startswith("  "):
+                    c.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor, 2)
+                    c.removeSelectedText()
+                elif text.startswith(" ") or text.startswith("\t"):
+                    c.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor, 1)
+                    c.removeSelectedText()
+            else:
+                c.insertText("  ")
+            if b == end_block:
+                break
+            b = b.next()
+        cursor.endEditBlock()
+
+    def _move_line(self, direction):
+        cursor = self.textCursor()
+        block = cursor.block()
+        target_block = block.previous() if direction < 0 else block.next()
+        if not target_block.isValid():
+            return
+
+        b1, b2 = (target_block, block) if direction < 0 else (block, target_block)
+        t1, t2 = b1.text(), b2.text()
+        lbl1 = b1.userData().label if (b1.userData() and hasattr(b1.userData(), "label")) else ""
+        lbl2 = b2.userData().label if (b2.userData() and hasattr(b2.userData(), "label")) else ""
+
+        cursor.beginEditBlock()
+        c1 = QTextCursor(b1)
+        c1.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+        c1.insertText(t2)
+        b1.setUserData(BlockUserData(lbl2))
+
+        c2 = QTextCursor(b2)
+        c2.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+        c2.insertText(t1)
+        b2.setUserData(BlockUserData(lbl1))
+        cursor.endEditBlock()
+
+        self.gutter.update()
+        new_cursor = QTextCursor(target_block)
+        new_cursor.movePosition(QTextCursor.StartOfLine)
+        self.setTextCursor(new_cursor)
+
+    def _duplicate_line(self):
+        cursor = self.textCursor()
+        cursor.beginEditBlock()
+        line_text = cursor.block().text()
+        ud = cursor.block().userData()
+        lbl = ud.label if (ud and hasattr(ud, "label")) else ""
+        cursor.movePosition(QTextCursor.EndOfBlock)
+        cursor.insertText("\n" + line_text)
+        cursor.block().setUserData(BlockUserData(lbl))
+        cursor.endEditBlock()
+        self.gutter.update()
+
+    def _toggle_comment(self):
+        cursor = self.textCursor()
+        cursor.beginEditBlock()
+        start_block = self.document().findBlock(cursor.selectionStart())
+        end_block = self.document().findBlock(cursor.selectionEnd())
+        b = start_block
+        while True:
+            ud = b.userData()
+            lbl = ud.label if (ud and hasattr(ud, "label")) else ""
+            if lbl.strip() == "*":
+                b.setUserData(BlockUserData(""))
+            elif not lbl.strip():
+                b.setUserData(BlockUserData("*"))
+            else:
+                text = b.text()
+                c = QTextCursor(b)
+                if text.startswith("*"):
+                    c.movePosition(QTextCursor.NextCharacter, QTextCursor.KeepAnchor)
+                    c.removeSelectedText()
+                else:
+                    c.insertText("* ")
+            if b == end_block:
+                break
+            b = b.next()
+        cursor.endEditBlock()
+        self.gutter.update()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Home:
+            cursor = self.textCursor()
+            pos = cursor.position()
+            start_of_line = cursor.block().position()
+            line_text = cursor.block().text()
+            first_non_space = len(line_text) - len(line_text.lstrip(" \t"))
+            indent_pos = start_of_line + first_non_space
+            mode = QTextCursor.KeepAnchor if (event.modifiers() & Qt.ShiftModifier) else QTextCursor.MoveAnchor
+            if pos == indent_pos:
+                cursor.setPosition(start_of_line, mode)
+            else:
+                cursor.setPosition(indent_pos, mode)
+            self.setTextCursor(cursor)
+            return
+
+        if event.key() in (Qt.Key_Backtab, Qt.Key_Tab) and (event.modifiers() & Qt.ShiftModifier):
+            self._indent_selection(unindent=True)
+            return
+
+        if event.key() == Qt.Key_Tab:
+            self._indent_selection(unindent=False)
+            return
+
+        if event.modifiers() == Qt.AltModifier and event.key() == Qt.Key_Up:
+            self._move_line(-1)
+            return
+
+        if event.modifiers() == Qt.AltModifier and event.key() == Qt.Key_Down:
+            self._move_line(1)
+            return
+
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_D:
+            self._duplicate_line()
+            return
+
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_Slash:
+            self._toggle_comment()
+            return
+
+        if event.key() == Qt.Key_F2:
+            self.gutter.edit_block(self.textCursor().block())
+            return
+
+        super().keyPressEvent(event)
 
 
 class GPSSStudio(QMainWindow):
@@ -243,7 +377,12 @@ class GPSSStudio(QMainWindow):
         self.lis_file = os.path.join(self.current_dir, "model.lis")
 
         self._build_ui()
+
         QShortcut(QKeySequence("F5"), self, self.run_simulation)
+        QShortcut(QKeySequence("Ctrl+G"), self, self._go_to_line)
+        QShortcut(QKeySequence("Ctrl+1"), self, lambda: self.tabs.setCurrentIndex(0))
+        QShortcut(QKeySequence("Ctrl+2"), self, lambda: self.tabs.setCurrentIndex(1))
+        QShortcut(QKeySequence("Ctrl+3"), self, lambda: self.tabs.setCurrentIndex(2))
 
     def _build_ui(self):
         central = QWidget()
@@ -329,6 +468,15 @@ class GPSSStudio(QMainWindow):
 
         splitter.setSizes([500, 660])
         root_layout.addWidget(splitter, 1)
+
+    def _go_to_line(self):
+        total = self.editor.document().blockCount()
+        line, ok = QInputDialog.getInt(self, "Переход к строке", f"Номер строки (1-{total}):", 1, 1, total)
+        if ok:
+            block = self.editor.document().findBlockByNumber(line - 1)
+            cursor = QTextCursor(block)
+            self.editor.setTextCursor(cursor)
+            self.editor.setFocus()
 
     def run_simulation(self):
         if not os.path.exists(self.exe_path):
