@@ -10,83 +10,220 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import (
     QFont, QFontMetrics, QKeySequence, QShortcut, QColor, 
-    QPainter, QPen, QTextCursor, QTextBlockUserData
+    QPainter, QPen, QTextCursor, QTextBlockUserData, QDesktopServices
 )
-from PySide6.QtCore import Qt, QRect
+from PySide6.QtCore import Qt, QRect, QUrl
 
 CODE_VAR_16 = """"""
+GITHUB_URL = "https://github.com/SL1dee36/gpss-studio"
 
 STYLE_SHEET = """
 QMainWindow {
-    background-color: #181825;
+    background-color: #121718;
 }
 QWidget {
-    color: #cdd6f4;
-    font-family: "Segoe UI", Arial, sans-serif;
+    color: #e0e5e9;
+    font-family: "Segoe UI", "Roboto", Arial, sans-serif;
     font-size: 13px;
 }
 QFrame#top_panel {
-    background-color: #1e1e2e;
-    border: 1px solid #313244;
-    border-radius: 8px;
-    padding: 4px 8px;
+    background-color: transparent;
+    border: 0px solid #454e4f;
+    border-radius: 0px;
 }
+
+QPushButton#btn_help {
+    background-color: #1f2426;
+    color: #8da4b5;
+    border: 1px solid #454e4f;
+    border-radius: 16px;
+    font-size: 14px;
+    padding: 0px;
+}
+QPushButton#btn_help:hover {
+    background-color: #292f30;
+    color: #bcdfff;
+    border-color: #bcdfff;
+}
+QPushButton#btn_help:pressed {
+    background-color: #1a2228;
+}
+
+QFrame#editor_header {
+    background-color: #1b1f20;
+    border: 1px solid #454e4f;
+    border-bottom: 1px solid #292f30;
+}
+
 QPlainTextEdit {
-    background-color: #11111b;
-    color: #cdd6f4;
-    border: 1px solid #313244;
-    border-radius: 6px;
-    selection-background-color: #45475a;
+    background-color: #121718;
+    color: #e0e5e9;
+    border: 1px solid #454e4f;
+    border-radius: 0px;
+    selection-background-color: #275782;
+    selection-color: #ffffff;
 }
+QPlainTextEdit#code_editor {
+    border-top: none;
+}
+
 QPushButton {
-    font-weight: bold;
-    border-radius: 6px;
-    padding: 6px 14px;
-    border: none;
+    font-weight: 600;
+    border-radius: 0px;
+    padding: 6px 16px;
+    border: 1px solid transparent;
 }
 QPushButton#btn_run {
-    background-color: #a6e3a1;
-    color: #11111b;
+    background-color: #bcdfff;
+    color: #0a2f54;
+    border-radius: 16px;
+    border: 1px solid #bcdfff;
+    padding: 6px 20px;
 }
 QPushButton#btn_run:hover {
-    background-color: #94e2d5;
+    background-color: #d6ecff;
+    border: 1px solid #d6ecff;
+}
+QPushButton#btn_run:pressed {
+    background-color: #9ecdfa;
+    border: 1px solid #9ecdfa;
 }
 QPushButton#btn_reset {
-    background-color: #313244;
-    color: #cdd6f4;
+    background-color: #1f2426;
+    color: #e0e5e9;
+    border: 1px solid #454e4f;
+    border-radius: 4px;
 }
 QPushButton#btn_reset:hover {
-    background-color: #45475a;
+    background-color: #292f30;
+    border-color: #bcdfff;
+    color: #ffffff;
+}
+QPushButton#btn_reset:pressed {
+    background-color: #1a2228;
 }
 QTabWidget::pane {
-    border: 1px solid #313244;
-    border-radius: 6px;
-    background-color: #11111b;
+    border: 1px solid #454e4f;
+    border-radius: 0px;
+    background-color: #121718;
 }
 QTabBar::tab {
-    background-color: #181825;
-    color: #a6adc8;
-    padding: 8px 16px;
-    margin-right: 4px;
-    border-top-left-radius: 6px;
-    border-top-right-radius: 6px;
+    background-color: #1b1f20;
+    color: #b4c4d1;
+    padding: 8px 18px;
+    margin-right: 2px;
+    border: 1px solid #454e4f;
+    border-bottom: none;
+    border-radius: 0px;
 }
 QTabBar::tab:selected {
-    background-color: #313244;
-    color: #cdd6f4;
-    font-weight: bold;
+    background-color: #292f30;
+    color: #bcdfff;
+    border-top: 2px solid #bcdfff;
 }
+QTabBar::tab:hover:!selected {
+    background-color: #22282a;
+    color: #e0e5e9;
+}
+
+QSplitter::handle:horizontal {
+    background-color: #313a3d;
+    width: 6px;
+    margin: 0px 2px;
+    border-radius: 2px;
+}
+QSplitter::handle:horizontal:hover {
+    background-color: #bcdfff;
+}
+QSplitter::handle:horizontal:pressed {
+    background-color: #9ecdfa;
+}
+
 QTableWidget {
-    background-color: #11111b;
-    gridline-color: #313244;
+    background-color: #121718;
+    gridline-color: #292f30;
     border: none;
+    border-radius: 0px;
+    selection-background-color: #1f2e3d;
+    selection-color: #e0e5e9;
+}
+QTableWidget::item:selected {
+    background-color: #1f2e3d;
+    color: #ffffff;
+    font-weight: normal;
+}
+QHeaderView {
+    background-color: #121718;
 }
 QHeaderView::section {
-    background-color: #1e1e2e;
-    color: #cdd6f4;
-    font-weight: bold;
-    border: 1px solid #313244;
+    background-color: #1b1f20;
+    color: #bcdfff;
+    border: 1px solid #454e4f;
+    border-radius: 0px;
     padding: 6px;
+    font-weight: normal;
+}
+QHeaderView::section:checked {
+    font-weight: normal;
+}
+
+QHeaderView::section:vertical {
+    background-color: #121718;
+    color: #61717e;
+    border: none;
+    border-right: 1px solid #292f30;
+    border-bottom: 1px solid #292f30;
+    padding: 0px 8px;
+    font-weight: normal;
+}
+QHeaderView::section:vertical:checked,
+QHeaderView::section:vertical:selected {
+    background-color: #121718;
+    color: #bcdfff;
+    font-weight: normal;
+}
+QTableCornerButton::section {
+    background-color: #121718;
+    border: 1px solid #292f30;
+}
+
+QScrollBar:vertical {
+    border: none;
+    background-color: #121718;
+    width: 10px;
+    margin: 0px;
+}
+QScrollBar::handle:vertical {
+    background-color: #454e4f;
+    min-height: 20px;
+    border-radius: 0px;
+}
+QScrollBar::handle:vertical:hover {
+    background-color: #5d6e7a;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+    border: none;
+}
+QScrollBar:horizontal {
+    border: none;
+    background-color: #121718;
+    height: 10px;
+    margin: 0px;
+}
+QScrollBar::handle:horizontal {
+    background-color: #454e4f;
+    min-width: 20px;
+    border-radius: 0px;
+}
+QScrollBar::handle:horizontal:hover {
+    background-color: #5d6e7a;
+}
+QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal,
+QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal {
+    background: none;
+    border: none;
 }
 """
 
@@ -105,8 +242,8 @@ class LabelGutter(QWidget):
         self.inline_edit.setMaxLength(4)
         self.inline_edit.hide()
         self.inline_edit.setStyleSheet(
-            "background-color: #181825; color: #f9e2af; border: 1px solid #89b4fa; "
-            "font-family: Consolas; font-size: 11px; padding: 0px 2px;"
+            "background-color: #1f2426; color: #bcdfff; border: 1px solid #bcdfff; "
+            "font-family: Consolas; font-size: 11px; padding: 0px 2px; border-radius: 0px;"
         )
         self.inline_edit.returnPressed.connect(self._finish_edit)
         self.inline_edit.editingFinished.connect(self._finish_edit)
@@ -114,7 +251,7 @@ class LabelGutter(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.fillRect(event.rect(), QColor("#161622"))
+        painter.fillRect(event.rect(), QColor("#121718"))
 
         font = self.editor.font()
         painter.setFont(font)
@@ -125,13 +262,13 @@ class LabelGutter(QWidget):
         top = int(self.editor.blockBoundingGeometry(block).translated(self.editor.contentOffset()).top())
         bottom = top + int(self.editor.blockBoundingRect(block).height())
 
-        pen_empty = QColor("#585b70")
-        pen_filled = QColor("#f9e2af")
+        pen_empty = QColor("#454e4f")
+        pen_filled = QColor("#bcdfff")
 
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
                 ud = block.userData()
-                lbl = ud.label if (ud and hasattr(ud, "label") and ud.label) else ""
+                lbl = ud.label if (ud and hasattr(ud, "label")) else ""
 
                 if lbl:
                     painter.setPen(pen_filled)
@@ -145,7 +282,7 @@ class LabelGutter(QWidget):
             bottom = top + int(self.editor.blockBoundingRect(block).height())
             block_num += 1
 
-        painter.setPen(QPen(QColor("#45475a"), 1))
+        painter.setPen(QPen(QColor("#454e4f"), 1))
         painter.drawLine(self.width() - 1, event.rect().top(), self.width() - 1, event.rect().bottom())
 
     def mouseDoubleClickEvent(self, event):
@@ -196,6 +333,7 @@ class LabelGutter(QWidget):
 class GPSSCodeEditor(QPlainTextEdit):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("code_editor")
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.gutter = LabelGutter(self)
 
@@ -395,9 +533,10 @@ class GPSSStudio(QMainWindow):
         top_panel.setObjectName("top_panel")
         top_panel.setFixedHeight(46)
         top_layout = QHBoxLayout(top_panel)
-        top_layout.setContentsMargins(6, 4, 6, 4)
+        top_layout.setContentsMargins(8, 4, 8, 4)
+        top_layout.setSpacing(8)
 
-        self.btn_run = QPushButton("▶ Запустить (F5)")
+        self.btn_run = QPushButton("Запустить (F5)")
         self.btn_run.setObjectName("btn_run")
         self.btn_run.setFixedHeight(32)
         self.btn_run.clicked.connect(self.run_simulation)
@@ -408,27 +547,57 @@ class GPSSStudio(QMainWindow):
         btn_reset.clicked.connect(lambda: self.editor.setPlainText(CODE_VAR_16))
 
         self.lbl_status = QLabel(f"Рабочая папка: {self.current_dir}")
-        self.lbl_status.setStyleSheet("color: #6c7086; margin-left: 10px; font-size: 11px;")
+        self.lbl_status.setStyleSheet("color: #7a8c9e; margin-left: 6px; font-size: 11px;")
+
+        btn_help = QPushButton("help?")
+        btn_help.setObjectName("btn_help")
+        btn_help.setFixedSize(64, 32)
+        btn_help.setToolTip(f"Открыть GitHub репозиторий:\n{GITHUB_URL}")
+        btn_help.setCursor(Qt.PointingHandCursor)
+        btn_help.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
 
         top_layout.addWidget(self.btn_run)
         top_layout.addWidget(btn_reset)
         top_layout.addWidget(self.lbl_status)
         top_layout.addStretch()
+        top_layout.addWidget(btn_help)
 
         root_layout.addWidget(top_panel)
 
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(8)
         mono_font = QFont("Consolas", 11)
         mono_font.setStyleHint(QFont.Monospace)
 
+        # Левая часть
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(6)
+        left_layout.setSpacing(0)
 
-        lbl_header = QLabel("<b>Метка (1-2) │ Код модели GPSS (начиная с 3-й позиции)</b>")
-        lbl_header.setStyleSheet("color: #a6adc8; font-size: 12px;")
-        left_layout.addWidget(lbl_header)
+        # Интегрированная шапка над редактором кода
+        editor_header = QFrame()
+        editor_header.setObjectName("editor_header")
+        editor_header.setFixedHeight(35)
+        header_layout = QHBoxLayout(editor_header)
+        header_layout.setContentsMargins(12, 0, 12, 0)
+        header_layout.setSpacing(8)
+
+        lbl_col1 = QLabel("МЕТКА")
+        lbl_col1.setStyleSheet("color: #7a8c9e; font-size: 11px; font-weight: 600; letter-spacing: 0.5px;")
+
+        lbl_sep = QLabel("│")
+        lbl_sep.setStyleSheet("color: #454e4f; font-weight: bold;")
+
+        lbl_col2 = QLabel("КОД МОДЕЛИ GPSS")
+        lbl_col2.setStyleSheet("color: #b4c4d1; font-size: 11px; font-weight: 600; letter-spacing: 0.5px;")
+
+        header_layout.addWidget(lbl_col1)
+        header_layout.addWidget(lbl_sep)
+        header_layout.addWidget(lbl_col2)
+        header_layout.addStretch()
+
+        left_layout.addWidget(editor_header)
 
         self.editor = GPSSCodeEditor()
         self.editor.setFont(mono_font)
@@ -437,6 +606,7 @@ class GPSSStudio(QMainWindow):
         left_layout.addWidget(self.editor)
         splitter.addWidget(left_widget)
 
+        # Правая часть
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -447,21 +617,25 @@ class GPSSStudio(QMainWindow):
         self.summary_table = QTableWidget()
         self.summary_table.setColumnCount(3)
         self.summary_table.setHorizontalHeaderLabels(["Параметр", "Значение", "Пояснение"])
+        
+        self.summary_table.horizontalHeader().setHighlightSections(False)
+        self.summary_table.verticalHeader().setHighlightSections(False)
+        
         self.summary_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
         self.summary_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.summary_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.tabs.addTab(self.summary_table, "📊 Сводка для отчёта")
+        self.tabs.addTab(self.summary_table, "Сводка для отчёта")
 
         self.lis_viewer = QPlainTextEdit()
         self.lis_viewer.setFont(mono_font)
         self.lis_viewer.setReadOnly(True)
         self.lis_viewer.setLineWrapMode(QPlainTextEdit.NoWrap)
-        self.tabs.addTab(self.lis_viewer, "📄 Полный листинг (.lis)")
+        self.tabs.addTab(self.lis_viewer, "Полный листинг (.lis)")
 
         self.console_viewer = QPlainTextEdit()
         self.console_viewer.setFont(mono_font)
         self.console_viewer.setReadOnly(True)
-        self.tabs.addTab(self.console_viewer, "💻 Вывод консоли")
+        self.tabs.addTab(self.console_viewer, "Вывод консоли")
 
         right_layout.addWidget(self.tabs)
         splitter.addWidget(right_widget)
@@ -585,7 +759,7 @@ class GPSSStudio(QMainWindow):
             it_param = QTableWidgetItem(param)
             it_val = QTableWidgetItem(val)
             it_val.setTextAlignment(Qt.AlignCenter)
-            it_val.setForeground(QColor("#a6e3a1"))
+            it_val.setForeground(QColor("#bcdfff"))
             it_desc = QTableWidgetItem(desc)
 
             self.summary_table.setItem(row, 0, it_param)
