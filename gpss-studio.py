@@ -1,3 +1,7 @@
+# /// script
+# requires-python = ">=3.9"
+# dependencies = ["PySide6>=6.5"]
+# ///
 import os
 import re
 import sys
@@ -6,13 +10,15 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QPlainTextEdit, QLabel, QSplitter, QMessageBox,
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
-    QFrame, QSizePolicy, QLineEdit, QInputDialog
+    QFrame, QSizePolicy, QLineEdit, QInputDialog, QProgressDialog
 )
 from PySide6.QtGui import (
-    QFont, QFontMetrics, QKeySequence, QShortcut, QColor, 
+    QFont, QFontMetrics, QKeySequence, QShortcut, QColor, QFontDatabase,
     QPainter, QPen, QTextCursor, QTextBlockUserData, QDesktopServices
 )
-from PySide6.QtCore import Qt, QRect, QUrl
+from PySide6.QtCore import Qt, QRect, QUrl, QThread, Signal
+
+from gpss_runner import GpssRunner
 
 CODE_VAR_16 = """"""
 GITHUB_URL = "https://github.com/SL1dee36/gpss-studio"
@@ -56,6 +62,8 @@ QFrame#editor_header {
 }
 
 QPlainTextEdit {
+    font-family: Consolas, "DejaVu Sans Mono", "Liberation Mono", Menlo, monospace;
+    font-size: 11pt;
     background-color: #121718;
     color: #e0e5e9;
     border: 1px solid #454e4f;
@@ -243,7 +251,7 @@ class LabelGutter(QWidget):
         self.inline_edit.hide()
         self.inline_edit.setStyleSheet(
             "background-color: #1f2426; color: #bcdfff; border: 1px solid #bcdfff; "
-            "font-family: Consolas; font-size: 11px; padding: 0px 2px; border-radius: 0px;"
+            "font-family: Consolas, 'DejaVu Sans Mono', Menlo, monospace; font-size: 11px; padding: 0px 2px; border-radius: 0px;"
         )
         self.inline_edit.returnPressed.connect(self._finish_edit)
         self.inline_edit.editingFinished.connect(self._finish_edit)
@@ -502,15 +510,75 @@ class GPSSCodeEditor(QPlainTextEdit):
         super().keyPressEvent(event)
 
 
+def make_mono_font():
+    if "Consolas" in QFontDatabase.families():
+        font = QFont("Consolas", 11)
+    else:
+        font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        font.setPointSize(11)
+    font.setStyleHint(QFont.Monospace)
+    return font
+
+
+class SetupWorker(QThread):
+    progress = Signal(str, int)
+    failed = Signal(str)
+
+    def __init__(self, runner):
+        super().__init__()
+        self.runner = runner
+
+    def run(self):
+        try:
+            self.runner.setup(lambda text, pct: self.progress.emit(text, -1 if pct is None else pct))
+        except Exception as e:
+            self.failed.emit(str(e))
+
+
+def ensure_runner_ready(runner, parent=None):
+    if not runner.needs_setup():
+        return True
+
+    dlg = QProgressDialog("Подготовка окружения для gpssh.exe...", None, 0, 0, parent)
+    dlg.setWindowTitle("GPSS/H Studio: первый запуск")
+    dlg.setWindowModality(Qt.ApplicationModal)
+    dlg.setMinimumWidth(480)
+    dlg.setMinimumDuration(0)
+    dlg.setAutoClose(False)
+    dlg.setAutoReset(False)
+
+    def on_progress(text, pct):
+        dlg.setLabelText(text)
+        if pct < 0:
+            dlg.setRange(0, 0)
+        else:
+            dlg.setRange(0, 100)
+            dlg.setValue(pct)
+
+    errors = []
+    worker = SetupWorker(runner)
+    worker.progress.connect(on_progress)
+    worker.failed.connect(errors.append)
+    worker.finished.connect(dlg.close)
+    worker.start()
+    dlg.exec()
+    worker.wait()
+
+    if errors:
+        QMessageBox.critical(parent, "Ошибка настройки", errors[0])
+        return False
+    return True
+
+
 class GPSSStudio(QMainWindow):
-    def __init__(self):
+    def __init__(self, runner):
         super().__init__()
         self.setWindowTitle("GPSS/H Studio")
         self.resize(1180, 720)
         self.setStyleSheet(STYLE_SHEET)
 
+        self.runner = runner
         self.current_dir = os.path.dirname(os.path.abspath(__file__))
-        self.exe_path = os.path.join(self.current_dir, "gpssh.exe")
         self.gps_file = os.path.join(self.current_dir, "model.gps")
         self.lis_file = os.path.join(self.current_dir, "model.lis")
 
@@ -566,8 +634,7 @@ class GPSSStudio(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(8)
-        mono_font = QFont("Consolas", 11)
-        mono_font.setStyleHint(QFont.Monospace)
+        mono_font = make_mono_font()
 
         # Левая часть
         left_widget = QWidget()
@@ -652,12 +719,21 @@ class GPSSStudio(QMainWindow):
             self.editor.setTextCursor(cursor)
             self.editor.setFocus()
 
+    def _find_exe(self):
+        for name in os.listdir(self.current_dir):
+            if name.lower() == "gpssh.exe":
+                return os.path.join(self.current_dir, name)
+        return None
+
     def run_simulation(self):
-        if not os.path.exists(self.exe_path):
+        exe_path = self._find_exe()
+        if not exe_path:
             QMessageBox.critical(
                 self, "Ошибка",
-                f"Файл gpssh.exe не найден!\n\nПоместите скрипт в папку с gpssh.exe:\n{self.current_dir}"
+                f"Файл gpssh.exe не найден!\n\nПоложите gpssh.exe в папку программы:\n{self.current_dir}"
             )
+            return
+        if not ensure_runner_ready(self.runner, self):
             return
 
         full_code_lines = []
@@ -696,21 +772,17 @@ class GPSSStudio(QMainWindow):
             except OSError:
                 pass
 
+        QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            process = subprocess.run(
-                [self.exe_path, "model.gps"],
-                input="model.gps\n",
-                cwd=self.current_dir,
-                capture_output=True,
-                text=True,
-                timeout=5
-            )
+            process = self.runner.run(exe_path, self.current_dir, "model.gps", timeout=15)
         except subprocess.TimeoutExpired:
             QMessageBox.warning(self, "Таймаут", "Процесс GPSS завис. Проверьте условия завершения модели.")
             return
         except Exception as e:
             QMessageBox.critical(self, "Ошибка запуска", f"Сбой при запуске gpssh.exe:\n{e}")
             return
+        finally:
+            QApplication.restoreOverrideCursor()
 
         self.console_viewer.setPlainText(f"STDOUT:\n{process.stdout}\n\nSTDERR:\n{process.stderr}")
 
@@ -791,6 +863,8 @@ class GPSSStudio(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    window = GPSSStudio()
+    runner = GpssRunner()
+    ensure_runner_ready(runner)
+    window = GPSSStudio(runner)
     window.show()
     sys.exit(app.exec())
