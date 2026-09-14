@@ -1,3 +1,9 @@
+# Description: Lightweight desktop IDE and simulation runner for Wolverine Software GPSS/H
+# Author: Nazaryan Artem @Sl1dee36
+# Date: 15.09.2026
+# Current version: v1.5.0-indev
+# License: MIT
+
 import os
 import re
 import sys
@@ -9,14 +15,14 @@ from PySide6.QtWidgets import (
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
     QFrame, QSizePolicy, QLineEdit, QInputDialog, QFileDialog,
     QDialog, QFormLayout, QComboBox, QTextEdit, QStatusBar,
-    QCheckBox
+    QCheckBox, QStyledItemDelegate, QStyleOptionViewItem, QStyle
 )
 from PySide6.QtGui import (
     QFont, QFontMetrics, QKeySequence, QShortcut, QColor, 
     QPainter, QPen, QTextCursor, QTextBlockUserData, QDesktopServices,
     QSyntaxHighlighter, QTextCharFormat, QTextDocument, QTextFormat
 )
-from PySide6.QtCore import Qt, QRect, QUrl, QRegularExpression, Signal, QPoint
+from PySide6.QtCore import Qt, QRect, QSize, QUrl, QRegularExpression, Signal, QPoint, QTimer
 
 DEFAULT_TEMPLATE = """"""
 
@@ -71,8 +77,7 @@ QPushButton#btn_menu {
     color: #8da4b5;
     border: 1px solid #454e4f;
     border-radius: 16px;
-    font-size: 15px;
-    font-weight: bold;
+    font-size: 14px;
     padding: 0px;
 }
 QPushButton#btn_menu:hover {
@@ -120,6 +125,76 @@ QFrame#search_bar {
     border-top: none;
     border-bottom: 1px solid #454e4f;
 }
+QFrame#search_bar QLabel {
+    color: #b4c4d1;
+    font-size: 12px;
+    font-weight: 600;
+}
+QFrame#search_bar QLabel#search_lbl_count {
+    color: #7a8c9e;
+    font-size: 11px;
+    font-weight: normal;
+    border: none;
+    background: transparent;
+    padding: 0 4px;
+}
+QFrame#search_bar QLineEdit {
+    background-color: #121718;
+    color: #e0e5e9;
+    border: 1px solid #454e4f;
+    border-radius: 3px;
+    padding: 2px 8px;
+    font-size: 12px;
+}
+QFrame#search_bar QLineEdit:focus {
+    border-color: #bcdfff;
+}
+QFrame#search_bar QPushButton {
+    outline: none;
+    background-color: #1f2426;
+    color: #e0e5e9;
+    border: 1px solid #454e4f;
+    border-radius: 3px;
+    padding: 2px 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+QFrame#search_bar QPushButton:focus {
+    outline: none;
+}
+QFrame#search_bar QPushButton:hover {
+    background-color: #292f30;
+    border-color: #bcdfff;
+    color: #ffffff;
+}
+QFrame#search_bar QPushButton:pressed {
+    background-color: #1a2228;
+}
+QPushButton#btn_lis_find {
+    outline: none;
+    background-color: #1f2426;
+    color: #e0e5e9;
+    border: 1px solid #454e4f;
+    border-radius: 3px;
+    padding: 2px 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+QPushButton#btn_lis_find:focus {
+    outline: none;
+}
+QPushButton#btn_lis_find:hover {
+    background-color: #292f30;
+    border-color: #bcdfff;
+    color: #ffffff;
+}
+QPushButton#btn_lis_find:pressed {
+    background-color: #1a2228;
+}
+QLabel#lbl_lis_file {
+    color: #7a8c9e;
+    font-size: 11px;
+}
 
 QPlainTextEdit {
     background-color: #121718;
@@ -134,10 +209,14 @@ QPlainTextEdit#code_editor {
 }
 
 QPushButton {
+    outline: none;
     font-weight: 600;
     border-radius: 0px;
     padding: 6px 16px;
     border: 1px solid transparent;
+}
+QPushButton:focus {
+    outline: none;
 }
 QPushButton#btn_run {
     background-color: #bcdfff;
@@ -169,6 +248,27 @@ QPushButton#btn_reset:hover {
 QPushButton#btn_reset:pressed {
     background-color: #1a2228;
 }
+QPushButton#btn_copy_table {
+    outline: none;
+    background-color: #1f2426;
+    color: #e0e5e9;
+    border: 1px solid #454e4f;
+    border-radius: 14px;
+    padding: 2px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}
+QPushButton#btn_copy_table:focus {
+    outline: none;
+}
+QPushButton#btn_copy_table:hover {
+    background-color: #292f30;
+    border-color: #bcdfff;
+    color: #ffffff;
+}
+QPushButton#btn_copy_table:pressed {
+    background-color: #1a2228;
+}
 
 QLineEdit, QComboBox {
     background-color: #1f2426;
@@ -198,7 +298,6 @@ QTabBar::tab {
     color: #b4c4d1;
     padding: 8px 18px;
     margin-right: 2px;
-    border: 1px solid #454e4f;
     border-bottom: none;
     border-radius: 0px;
 }
@@ -226,6 +325,7 @@ QSplitter::handle:horizontal:pressed {
 }
 
 QTableWidget {
+    outline: none;
     background-color: #121718;
     gridline-color: #292f30;
     border: none;
@@ -233,24 +333,34 @@ QTableWidget {
     selection-background-color: #1f2e3d;
     selection-color: #e0e5e9;
 }
+QTableWidget::item {
+    outline: none;
+}
+QTableWidget::item:focus {
+    outline: none;
+}
 QTableWidget::item:selected {
+    outline: none;
     background-color: #1f2e3d;
     color: #ffffff;
     font-weight: normal;
 }
 QHeaderView {
     background-color: #121718;
+    border: none;
 }
 QHeaderView::section {
     background-color: #1b1f20;
     color: #bcdfff;
-    border: 1px solid #454e4f;
+    border: none;
+    border-right: 1px solid #292f30;
+    border-bottom: 1px solid #292f30;
     border-radius: 0px;
-    padding: 6px;
-    font-weight: normal;
+    padding: 5px 8px;
+    font-weight: 600;
 }
 QHeaderView::section:checked {
-    font-weight: normal;
+    font-weight: 600;
 }
 
 QHeaderView::section:vertical {
@@ -270,7 +380,15 @@ QHeaderView::section:vertical:selected {
 }
 QTableCornerButton::section {
     background-color: #121718;
-    border: 1px solid #292f30;
+    border: none;
+    border-right: 1px solid #292f30;
+    border-bottom: 1px solid #292f30;
+}
+
+QTabWidget#summary_subtabs::pane {
+    border: none;
+    border-top: 1px solid #292f30;
+    background-color: #121718;
 }
 
 QScrollBar:vertical {
@@ -450,8 +568,7 @@ QPushButton#btn_menu {
     color: #57606a;
     border: 1px solid #d0d7de;
     border-radius: 16px;
-    font-size: 15px;
-    font-weight: bold;
+    font-size: 14px;
     padding: 0px;
 }
 QPushButton#btn_menu:hover {
@@ -499,6 +616,76 @@ QFrame#search_bar {
     border-top: none;
     border-bottom: 1px solid #d0d7de;
 }
+QFrame#search_bar QLabel {
+    color: #57606a;
+    font-size: 12px;
+    font-weight: 600;
+}
+QFrame#search_bar QLabel#search_lbl_count {
+    color: #656d76;
+    font-size: 11px;
+    font-weight: normal;
+    border: none;
+    background: transparent;
+    padding: 0 4px;
+}
+QFrame#search_bar QLineEdit {
+    background-color: #ffffff;
+    color: #1f2328;
+    border: 1px solid #d0d7de;
+    border-radius: 3px;
+    padding: 2px 8px;
+    font-size: 12px;
+}
+QFrame#search_bar QLineEdit:focus {
+    border-color: #0969da;
+}
+QFrame#search_bar QPushButton {
+    outline: none;
+    background-color: #ffffff;
+    color: #24292f;
+    border: 1px solid #d0d7de;
+    border-radius: 3px;
+    padding: 2px 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+QFrame#search_bar QPushButton:focus {
+    outline: none;
+}
+QFrame#search_bar QPushButton:hover {
+    background-color: #f3f4f6;
+    border-color: #0969da;
+    color: #0969da;
+}
+QFrame#search_bar QPushButton:pressed {
+    background-color: #ebecf0;
+}
+QPushButton#btn_lis_find {
+    outline: none;
+    background-color: #ffffff;
+    color: #24292f;
+    border: 1px solid #d0d7de;
+    border-radius: 3px;
+    padding: 2px 12px;
+    font-size: 12px;
+    font-weight: 500;
+}
+QPushButton#btn_lis_find:focus {
+    outline: none;
+}
+QPushButton#btn_lis_find:hover {
+    background-color: #f3f4f6;
+    border-color: #0969da;
+    color: #0969da;
+}
+QPushButton#btn_lis_find:pressed {
+    background-color: #ebecf0;
+}
+QLabel#lbl_lis_file {
+    color: #7a8c9e;
+    font-size: 11px;
+}
 
 QPlainTextEdit {
     background-color: #ffffff;
@@ -513,10 +700,14 @@ QPlainTextEdit#code_editor {
 }
 
 QPushButton {
+    outline: none;
     font-weight: 600;
     border-radius: 0px;
     padding: 6px 16px;
     border: 1px solid transparent;
+}
+QPushButton:focus {
+    outline: none;
 }
 QPushButton#btn_run {
     background-color: #0969da;
@@ -547,6 +738,27 @@ QPushButton#btn_reset:hover {
 }
 QPushButton#btn_reset:pressed {
     background-color: #dadfe5;
+}
+QPushButton#btn_copy_table {
+    outline: none;
+    background-color: #f6f8fa;
+    color: #24292f;
+    border: 1px solid #d0d7de;
+    border-radius: 14px;
+    padding: 2px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}
+QPushButton#btn_copy_table:focus {
+    outline: none;
+}
+QPushButton#btn_copy_table:hover {
+    background-color: #f3f4f6;
+    border-color: #0969da;
+    color: #0969da;
+}
+QPushButton#btn_copy_table:pressed {
+    background-color: #ebecf0;
 }
 
 QLineEdit, QComboBox {
@@ -605,6 +817,7 @@ QSplitter::handle:horizontal:pressed {
 }
 
 QTableWidget {
+    outline: none;
     background-color: #ffffff;
     gridline-color: #eaeef2;
     border: none;
@@ -612,24 +825,34 @@ QTableWidget {
     selection-background-color: #b6d7f2;
     selection-color: #051d38;
 }
+QTableWidget::item {
+    outline: none;
+}
+QTableWidget::item:focus {
+    outline: none;
+}
 QTableWidget::item:selected {
+    outline: none;
     background-color: #b6d7f2;
     color: #051d38;
     font-weight: normal;
 }
 QHeaderView {
     background-color: #ffffff;
+    border: none;
 }
 QHeaderView::section {
     background-color: #f6f8fa;
     color: #0969da;
-    border: 1px solid #d0d7de;
+    border: none;
+    border-right: 1px solid #eaeef2;
+    border-bottom: 1px solid #d0d7de;
     border-radius: 0px;
-    padding: 6px;
-    font-weight: normal;
+    padding: 5px 8px;
+    font-weight: 600;
 }
 QHeaderView::section:checked {
-    font-weight: normal;
+    font-weight: 600;
 }
 
 QHeaderView::section:vertical {
@@ -648,8 +871,16 @@ QHeaderView::section:vertical:selected {
     font-weight: normal;
 }
 QTableCornerButton::section {
+    background-color: #f6f8fa;
+    border: none;
+    border-right: 1px solid #eaeef2;
+    border-bottom: 1px solid #d0d7de;
+}
+
+QTabWidget#summary_subtabs::pane {
+    border: none;
+    border-top: 1px solid #d0d7de;
     background-color: #ffffff;
-    border: 1px solid #eaeef2;
 }
 
 QScrollBar:vertical {
@@ -791,7 +1022,6 @@ QPushButton#btn_popup_action:pressed {
 }
 """
 
-
 class ConfigManager:
     CONFIG_FILE = "settings.json"
 
@@ -811,7 +1041,8 @@ class ConfigManager:
             "executable_path": default_exe,
             "theme": "dark",
             "work_dir": app_dir,
-            "show_line_numbers": False
+            "show_line_numbers": False,
+            "zoom": 100
         }
 
         path = cls.get_config_path()
@@ -833,12 +1064,10 @@ class ConfigManager:
         except Exception:
             pass
 
-
 class BlockUserData(QTextBlockUserData):
     def __init__(self, label=""):
         super().__init__()
         self.label = label
-
 
 class GPSSHighlighter(QSyntaxHighlighter):
     def __init__(self, parent=None, theme="dark"):
@@ -946,7 +1175,6 @@ class GPSSHighlighter(QSyntaxHighlighter):
                 match = match_iter.next()
                 self.setFormat(match.capturedStart(), match.capturedLength(), fmt)
 
-
 class LabelGutter(QWidget):
     def __init__(self, editor):
         super().__init__(editor)
@@ -1020,13 +1248,11 @@ class LabelGutter(QWidget):
 
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
-                # Line number (if enabled)
                 if self.show_line_numbers:
                     painter.setPen(pen_line_num)
                     num_rect = QRect(0, top, line_w - 6, fm.height())
                     painter.drawText(num_rect, Qt.AlignRight | Qt.AlignVCenter, str(block_num))
 
-                # Label
                 ud = block.userData()
                 lbl = ud.label if (ud and hasattr(ud, "label")) else ""
                 lbl_rect = QRect(line_w + 2, top, lbl_w - 4, fm.height())
@@ -1042,7 +1268,6 @@ class LabelGutter(QWidget):
             bottom = top + int(self.editor.blockBoundingRect(block).height())
             block_num += 1
 
-        # Vertical borders
         if self.show_line_numbers:
             painter.setPen(QPen(pen_sep, 1))
             painter.drawLine(line_w, event.rect().top(), line_w, event.rect().bottom())
@@ -1100,38 +1325,50 @@ class LabelGutter(QWidget):
         self.update()
         self.editor.setFocus()
 
-
 class SearchBar(QFrame):
-    def __init__(self, editor, parent=None):
+    def __init__(self, editor, parent=None, title="Поиск:", placeholder="Введите текст для поиска..."):
         super().__init__(parent)
         self.editor = editor
         self.setObjectName("search_bar")
-        self.setFixedHeight(34)
+        self.setFixedHeight(36)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(8, 2, 8, 2)
+        layout.setContentsMargins(8, 4, 8, 4)
         layout.setSpacing(6)
 
-        lbl = QLabel("Поиск:")
-        lbl.setStyleSheet("font-weight: 600; font-size: 12px;")
+        lbl = QLabel(title)
+        lbl.setObjectName("search_lbl_title")
 
         self.edit_find = QLineEdit()
-        self.edit_find.setPlaceholderText("Введите текст для поиска...")
+        self.edit_find.setObjectName("search_edit")
+        self.edit_find.setPlaceholderText(placeholder)
+        self.edit_find.setFixedHeight(28)
         self.edit_find.returnPressed.connect(self.find_next)
+        self.edit_find.textChanged.connect(self._on_text_changed)
 
         self.btn_prev = QPushButton("Назад")
-        self.btn_prev.setFixedHeight(24)
+        self.btn_prev.setObjectName("search_btn_prev")
+        self.btn_prev.setFixedHeight(28)
+        self.btn_prev.setCursor(Qt.PointingHandCursor)
+        self.btn_prev.setFocusPolicy(Qt.NoFocus)
         self.btn_prev.clicked.connect(self.find_prev)
 
         self.btn_next = QPushButton("Далее")
-        self.btn_next.setFixedHeight(24)
+        self.btn_next.setObjectName("search_btn_next")
+        self.btn_next.setFixedHeight(28)
+        self.btn_next.setCursor(Qt.PointingHandCursor)
+        self.btn_next.setFocusPolicy(Qt.NoFocus)
         self.btn_next.clicked.connect(self.find_next)
 
         self.lbl_count = QLabel("")
-        self.lbl_count.setStyleSheet("color: #7a8c9e; font-size: 11px;")
+        self.lbl_count.setObjectName("search_lbl_count")
+        self.lbl_count.setAlignment(Qt.AlignCenter)
 
         self.btn_close = QPushButton("Закрыть")
-        self.btn_close.setFixedHeight(24)
+        self.btn_close.setObjectName("search_btn_close")
+        self.btn_close.setFixedHeight(28)
+        self.btn_close.setCursor(Qt.PointingHandCursor)
+        self.btn_close.setFocusPolicy(Qt.NoFocus)
         self.btn_close.clicked.connect(self.hide_bar)
 
         layout.addWidget(lbl)
@@ -1142,6 +1379,12 @@ class SearchBar(QFrame):
         layout.addWidget(self.btn_close)
 
         self.hide()
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.hide_bar()
+            return
+        super().keyPressEvent(event)
 
     def show_bar(self):
         self.show()
@@ -1154,6 +1397,9 @@ class SearchBar(QFrame):
     def hide_bar(self):
         self.hide()
         self.editor.setFocus()
+
+    def _on_text_changed(self, text):
+        self._update_count(text)
 
     def find_next(self):
         text = self.edit_find.text()
@@ -1191,7 +1437,6 @@ class SearchBar(QFrame):
             self.lbl_count.setText("Не найдено")
         else:
             self.lbl_count.setText(f"Найдено: {total}")
-
 
 class ActionMenuPopup(QFrame):
     def __init__(self, main_window):
@@ -1236,12 +1481,12 @@ class ActionMenuPopup(QFrame):
         self.move(x, y)
         self.show()
 
-
 class GPSSCodeEditor(QPlainTextEdit):
     gutterWidthChanged = Signal()
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, main_window=None):
         super().__init__(parent)
+        self.main_window = main_window
         self.setObjectName("code_editor")
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.theme = "dark"
@@ -1511,12 +1756,153 @@ class GPSSCodeEditor(QPlainTextEdit):
 
         super().keyPressEvent(event)
 
+    def wheelEvent(self, event):
+        if event.modifiers() & Qt.ControlModifier:
+            delta = event.angleDelta().y()
+            main_win = self.main_window or self.window()
+            if hasattr(main_win, "zoom_in") and hasattr(main_win, "zoom_out"):
+                if delta > 0:
+                    main_win.zoom_in()
+                elif delta < 0:
+                    main_win.zoom_out()
+                event.accept()
+                return
+        super().wheelEvent(event)
+
+class ListingLineNumberArea(QWidget):
+    def __init__(self, editor):
+        super().__init__(editor)
+        self.editor = editor
+
+    def sizeHint(self):
+        return QSize(self.editor.line_number_area_width(), 0)
+
+    def paintEvent(self, event):
+        self.editor.line_number_area_paint_event(event)
+
+class ListingViewer(QPlainTextEdit):
+    def __init__(self, parent=None, main_window=None):
+        super().__init__(parent)
+        self.main_window = main_window
+        self.setObjectName("lis_viewer")
+        self.setReadOnly(True)
+        self.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.theme = "dark"
+        self.line_number_area = ListingLineNumberArea(self)
+
+        self.blockCountChanged.connect(self.update_line_number_area_width)
+        self.updateRequest.connect(self.update_line_number_area)
+        self.update_line_number_area_width(0)
+
+    def line_number_area_width(self):
+        digits = max(3, len(str(self.blockCount())))
+        space = 10 + self.fontMetrics().horizontalAdvance('9') * digits
+        return space
+
+    def update_line_number_area_width(self, _=0):
+        self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
+
+    def update_line_number_area(self, rect, dy):
+        if dy:
+            self.line_number_area.scroll(0, dy)
+        else:
+            self.line_number_area.update(0, rect.y(), self.line_number_area.width(), rect.height())
+        if rect.contains(self.viewport().rect()):
+            self.update_line_number_area_width(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        cr = self.contentsRect()
+        self.line_number_area.setGeometry(cr.left(), cr.top(), self.line_number_area_width(), cr.height())
+
+    def line_number_area_paint_event(self, event):
+        painter = QPainter(self.line_number_area)
+        is_dark = (self.theme == "dark")
+        bg_color = QColor("#121718" if is_dark else "#f6f8fa")
+        pen_line_num = QColor("#61717e" if is_dark else "#8c959f")
+        pen_sep = QColor("#292f30" if is_dark else "#d0d7de")
+
+        painter.fillRect(event.rect(), bg_color)
+        painter.setFont(self.font())
+        fm = self.fontMetrics()
+
+        block = self.firstVisibleBlock()
+        block_num = block.blockNumber() + 1
+        top = int(self.blockBoundingGeometry(block).translated(self.contentOffset()).top())
+        bottom = top + int(self.blockBoundingRect(block).height())
+
+        w = self.line_number_area_width()
+        while block.isValid() and top <= event.rect().bottom():
+            if block.isVisible() and bottom >= event.rect().top():
+                painter.setPen(pen_line_num)
+                num_rect = QRect(0, top, w - 8, fm.height())
+                painter.drawText(num_rect, Qt.AlignRight | Qt.AlignVCenter, str(block_num))
+            block = block.next()
+            top = bottom
+            bottom = top + int(self.blockBoundingRect(block).height())
+            block_num += 1
+
+        painter.setPen(QPen(pen_sep, 1))
+        painter.drawLine(w - 1, event.rect().top(), w - 1, event.rect().bottom())
+
+    def wheelEvent(self, event):
+        if event.modifiers() & Qt.ControlModifier:
+            delta = event.angleDelta().y()
+            main_win = self.main_window or self.window()
+            if hasattr(main_win, "zoom_in") and hasattr(main_win, "zoom_out"):
+                if delta > 0:
+                    main_win.zoom_in()
+                elif delta < 0:
+                    main_win.zoom_out()
+                event.accept()
+                return
+        super().wheelEvent(event)
+
+class NoFocusDelegate(QStyledItemDelegate):
+    def paint(self, painter, option, index):
+        opt = QStyleOptionViewItem(option)
+        opt.state &= ~QStyle.State_HasFocus
+        super().paint(painter, opt, index)
+
+class ClickableTableWidget(QTableWidget):
+    ctrlClickedRow = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMouseTracking(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.horizontalHeader().setHighlightSections(False)
+        self.verticalHeader().setHighlightSections(False)
+        self.setAlternatingRowColors(False)
+        self.setSelectionBehavior(QTableWidget.SelectRows)
+        self.setSelectionMode(QTableWidget.SingleSelection)
+        self.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.setItemDelegate(NoFocusDelegate(self))
+
+    def mousePressEvent(self, event):
+        pos_y = int(event.position().y()) if hasattr(event, "position") else event.y()
+        row = self.rowAt(pos_y)
+        if event.button() == Qt.LeftButton and (event.modifiers() & Qt.ControlModifier):
+            if row >= 0:
+                self.ctrlClickedRow.emit(row)
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            row = self.currentRow()
+            if row >= 0:
+                self.ctrlClickedRow.emit(row)
+                event.accept()
+                return
+        super().keyPressEvent(event)
 
 class SettingsDialog(QDialog):
     def __init__(self, config, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Настройки")
-        self.resize(540, 270)
+        self.resize(540, 310)
         self.config = dict(config)
         self._build_ui()
 
@@ -1566,6 +1952,16 @@ class SettingsDialog(QDialog):
         else:
             self.combo_theme.setCurrentIndex(0)
         form.addRow("Тема оформления:", self.combo_theme)
+
+        self.combo_zoom = QComboBox()
+        self.combo_zoom.addItems(["75%", "80%", "90%", "100%", "110%", "125%", "150%", "175%", "200%"])
+        cur_zoom = f"{self.config.get('zoom', 100)}%"
+        idx = self.combo_zoom.findText(cur_zoom)
+        if idx >= 0:
+            self.combo_zoom.setCurrentIndex(idx)
+        else:
+            self.combo_zoom.setEditText(cur_zoom)
+        form.addRow("Масштаб интерфейса (UI):", self.combo_zoom)
 
         self.chk_lines = QCheckBox("Показывать номера строк в редакторе")
         self.chk_lines.setChecked(self.config.get("show_line_numbers", False))
@@ -1620,13 +2016,277 @@ class SettingsDialog(QDialog):
         self.config["work_dir"] = self.edit_work_dir.text().strip()
         self.config["theme"] = "dark" if self.combo_theme.currentIndex() == 0 else "light"
         self.config["show_line_numbers"] = self.chk_lines.isChecked()
+        try:
+            zoom_str = self.combo_zoom.currentText().replace("%", "").strip()
+            self.config["zoom"] = int(zoom_str)
+        except Exception:
+            self.config["zoom"] = 100
         self.accept()
 
+class GPSSListingParser:
+    def __init__(self, text):
+        self.text = text
+        self.lines = text.replace("\r\n", "\n").split("\n")
+        self.header_info = {}
+        self.clocks = {}
+        self.model_size = {}
+        self.storage_requirements = {}
+        self.common_storage = {}
+        self.execution_stats = {}
+        self.elapsed_time = {}
+        self.facilities = []
+        self.queues = []
+        self.storages = []
+        self.blocks = []
+        self.random_streams = []
+        self.parse()
+
+    def parse(self):
+        state = None
+        block_col_pos = []
+
+        for idx, line in enumerate(self.lines):
+            line_no = idx + 1
+            s = line.strip()
+
+            if "GPSS/H Release" in line and not self.header_info:
+                m_ver = re.search(r"GPSS/H\s+Release\s+([^\s]+(?:\s*\([^\)]+\))?)", line)
+                ver = m_ver.group(1) if m_ver else "GPSS/H"
+                m_file = re.search(r"File:\s*([^\s]+)", line)
+                f_name = m_file.group(1) if m_file else ""
+                self.header_info = {"version": ver, "file": f_name, "line_no": line_no}
+
+            if "Relative Clock:" in line:
+                m_rel = re.search(r"Relative Clock:\s*([\d\.]+)", line)
+                m_abs = re.search(r"Absolute Clock:\s*([\d\.]+)", line)
+                self.clocks["relative"] = m_rel.group(1) if m_rel else "0.0"
+                self.clocks["absolute"] = m_abs.group(1) if m_abs else "0.0"
+                self.clocks["line_no"] = line_no
+
+            if "Simulation complete." in line:
+                m_abs = re.search(r"Absolute Clock:\s*([\d\.]+)", line)
+                if m_abs:
+                    self.clocks["absolute"] = m_abs.group(1)
+                    if "line_no" not in self.clocks:
+                        self.clocks["line_no"] = line_no
+
+            if "Total Block Executions:" in line:
+                m = re.search(r"Total Block Executions:\s*(\d+)", line)
+                if m:
+                    self.execution_stats["total_blocks"] = m.group(1)
+                    self.execution_stats["line_no"] = line_no
+            if "Blocks / second:" in line:
+                m = re.search(r"Blocks\s*/\s*second:\s*([\d\.]+)", line)
+                if m:
+                    self.execution_stats["blocks_per_sec"] = m.group(1)
+            if "Microseconds / Block:" in line:
+                m = re.search(r"Microseconds\s*/\s*Block:\s*([\d\.]+)", line)
+                if m:
+                    self.execution_stats["us_per_block"] = m.group(1)
+
+            if "Control Statements" in line and "Blocks" not in line:
+                m = re.search(r"Control Statements\s+(\d+)", line)
+                if m:
+                    self.model_size["control_statements"] = m.group(1)
+                    self.model_size["line_no"] = line_no
+            if re.match(r"^\s*Blocks\s+\d+", line):
+                m = re.search(r"Blocks\s+(\d+)", line)
+                if m:
+                    self.model_size["blocks"] = m.group(1)
+                    if "line_no" not in self.model_size:
+                        self.model_size["line_no"] = line_no
+
+            if "Compiled Code:" in line:
+                m = re.search(r"Compiled Code:\s*(\d+)", line)
+                if m:
+                    self.storage_requirements["compiled_code"] = m.group(1)
+                    self.storage_requirements["line_no"] = line_no
+            if "Compiled Data:" in line:
+                m = re.search(r"Compiled Data:\s*(\d+)", line)
+                if m:
+                    self.storage_requirements["compiled_data"] = m.group(1)
+            if "Entities:" in line and "Dictionary" not in line:
+                m = re.search(r"Entities:\s*(\d+)", line)
+                if m:
+                    self.storage_requirements["entities"] = m.group(1)
+            if "Common:" in line:
+                m = re.search(r"Common:\s*(\d+)", line)
+                if m:
+                    self.storage_requirements["common"] = m.group(1)
+            if re.match(r"^\s*Total:\s*\d+", line):
+                m = re.search(r"Total:\s*(\d+)", line)
+                if m:
+                    self.storage_requirements["total"] = m.group(1)
+
+            if "bytes available" in line:
+                m = re.search(r"(\d+)\s+bytes available", line)
+                if m:
+                    self.common_storage["available"] = m.group(1)
+                    self.common_storage["line_no"] = line_no
+            if "in use" in line:
+                m = re.search(r"(\d+)\s+in use", line)
+                if m:
+                    self.common_storage["in_use"] = m.group(1)
+            if "used (max)" in line:
+                m = re.search(r"(\d+)\s+used \(max\)", line)
+                if m:
+                    self.common_storage["max_used"] = m.group(1)
+
+            if "Facility" in line and ("Total" in line or "Avail" in line):
+                state = "facility_hdr"
+                continue
+            if state == "facility_hdr":
+                if "Time" in line or "Status" in line:
+                    state = "facilities"
+                    continue
+                state = None
+
+            if state == "facilities":
+                if not s or s.startswith("\x0c") or any(k in line for k in ["Queue", "Storage", "Random", "Status of", "Relative Clock", "Simulation"]):
+                    state = None
+                else:
+                    name = line[0:10].strip()
+                    if name and not name.startswith("-"):
+                        self.facilities.append({
+                            "line_no": line_no,
+                            "name": name,
+                            "util": line[10:17].strip() if len(line) > 10 else "",
+                            "avail_util": line[17:24].strip() if len(line) > 17 else "",
+                            "unavl_util": line[24:31].strip() if len(line) > 24 else "",
+                            "entries": line[31:43].strip() if len(line) > 31 else "",
+                            "avg_time": line[43:56].strip() if len(line) > 43 else "",
+                            "status": line[56:66].strip() if len(line) > 56 else "",
+                            "pct_avail": line[66:75].strip() if len(line) > 66 else "",
+                            "seizing": line[75:85].strip() if len(line) > 75 else "",
+                            "preempting": line[85:95].strip() if len(line) > 85 else ""
+                        })
+
+            if "Queue" in line and ("Maximum" in line or "Average" in line):
+                state = "queue_hdr"
+                continue
+            if state == "queue_hdr":
+                if "Contents" in line or "Entries" in line:
+                    state = "queues"
+                    continue
+                state = None
+
+            if state == "queues":
+                if not s or s.startswith("\x0c") or any(k in line for k in ["Facility", "Storage", "Random", "Status of", "Relative Clock", "Simulation"]):
+                    state = None
+                else:
+                    name = line[0:10].strip()
+                    if name and not name.startswith("-"):
+                        self.queues.append({
+                            "line_no": line_no,
+                            "name": name,
+                            "max_c": line[10:21].strip() if len(line) > 10 else "",
+                            "avg_c": line[21:34].strip() if len(line) > 21 else "",
+                            "total_e": line[34:47].strip() if len(line) > 34 else "",
+                            "zero_e": line[47:58].strip() if len(line) > 47 else "",
+                            "pct_z": line[58:69].strip() if len(line) > 58 else "",
+                            "avg_t": line[69:83].strip() if len(line) > 69 else "",
+                            "dollar_avg_t": line[83:97].strip() if len(line) > 83 else "",
+                            "qtable": line[97:107].strip() if len(line) > 97 else "",
+                            "cur_c": line[107:].strip() if len(line) > 107 else ""
+                        })
+
+            if "Storage" in line and ("Capacity" in line or "Average" in line or "Avg-Util" in line):
+                state = "storage_hdr"
+                continue
+            if state == "storage_hdr":
+                if "Contents" in line or "Time" in line or "Status" in line:
+                    state = "storages"
+                    continue
+                state = None
+
+            if state == "storages":
+                if not s or s.startswith("\x0c") or any(k in line for k in ["Facility", "Queue", "Random", "Status of", "Relative Clock", "Simulation"]):
+                    state = None
+                else:
+                    name = line[0:10].strip()
+                    if name and not name.startswith("-"):
+                        self.storages.append({
+                            "line_no": line_no,
+                            "name": name,
+                            "util": line[10:17].strip() if len(line) > 10 else "",
+                            "avail_util": line[17:24].strip() if len(line) > 17 else "",
+                            "unavl_util": line[24:31].strip() if len(line) > 24 else "",
+                            "entries": line[31:43].strip() if len(line) > 31 else "",
+                            "avg_time": line[43:56].strip() if len(line) > 43 else "",
+                            "status": line[56:66].strip() if len(line) > 56 else "",
+                            "pct_avail": line[66:76].strip() if len(line) > 66 else "",
+                            "capacity": line[76:88].strip() if len(line) > 76 else "",
+                            "avg_contents": line[88:100].strip() if len(line) > 88 else "",
+                            "cur_contents": line[100:112].strip() if len(line) > 100 else "",
+                            "max_contents": line[112:].strip() if len(line) > 112 else ""
+                        })
+
+            if "Block Current     Total" in line:
+                state = "blocks"
+                block_col_pos = [m.start() for m in re.finditer(r"Block", line)]
+                continue
+            if state == "blocks":
+                if not s or s.startswith("\x0c") or any(k in line for k in ["Facility", "Storage", "Queue", "Random", "Status of", "Relative Clock", "Simulation"]):
+                    state = None
+                else:
+                    for p in block_col_pos:
+                        chunk = line[p:p+25]
+                        if not chunk.strip():
+                            continue
+                        blk = chunk[:12].strip()
+                        if not blk or blk == "Block":
+                            continue
+                        cur = chunk[12:18].strip() or "0"
+                        tot = chunk[18:].strip()
+                        self.blocks.append({
+                            "line_no": line_no,
+                            "block": blk,
+                            "current": cur,
+                            "total": tot
+                        })
+
+            if "Random    Antithetic" in line:
+                state = "random_hdr"
+                continue
+            if state == "random_hdr":
+                if "Stream" in line or "Variates" in line:
+                    state = "random"
+                    continue
+                state = None
+            if state == "random":
+                if not s or s.startswith("\x0c") or any(k in line for k in ["Status of", "Simulation", "Facility", "Queue", "Storage"]):
+                    state = None
+                else:
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        self.random_streams.append({
+                            "line_no": line_no,
+                            "stream": parts[0],
+                            "antithetic": parts[1],
+                            "initial_pos": parts[2],
+                            "current_pos": parts[3],
+                            "sample_count": parts[4],
+                            "chi_square": parts[5] if len(parts) > 5 else "N/A"
+                        })
+
+def filter_table(table, text):
+    text = text.lower().strip()
+    for r in range(table.rowCount()):
+        if not text:
+            table.setRowHidden(r, False)
+            continue
+        match = False
+        for c in range(table.columnCount()):
+            it = table.item(r, c)
+            if it and text in it.text().lower():
+                match = True
+                break
+        table.setRowHidden(r, not match)
 
 class GPSSStudio(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.resize(1180, 720)
+        self.resize(1440, 780)
         self.current_file_path = None
 
         self.current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1636,28 +2296,118 @@ class GPSSStudio(QMainWindow):
         self.work_dir = self.config.get("work_dir", self.current_dir)
         self.exe_path = self.config.get("executable_path", os.path.join(self.work_dir, "gpssh.exe"))
         self.show_line_numbers = self.config.get("show_line_numbers", False)
+        self.zoom_level = self.config.get("zoom", 100)
 
         self.gps_file = os.path.join(self.work_dir, "model.gps")
         self.lis_file = os.path.join(self.work_dir, "model.lis")
 
         self.action_popup = ActionMenuPopup(self)
-        self.apply_theme(self.theme)
         self._build_ui()
+        self.apply_theme(self.theme)
         self._setup_shortcuts()
         self._update_window_title()
 
-        self.editor.load_code(DEFAULT_TEMPLATE)
+        if os.path.exists(self.gps_file):
+            try:
+                with open(self.gps_file, "r", encoding="utf-8", errors="replace") as f:
+                    c = f.read()
+                if c.strip():
+                    self.editor.load_code(c)
+                    self.current_file_path = self.gps_file
+                else:
+                    self.editor.load_code(DEFAULT_TEMPLATE)
+            except Exception:
+                self.editor.load_code(DEFAULT_TEMPLATE)
+        else:
+            self.editor.load_code(DEFAULT_TEMPLATE)
+
+        if os.path.exists(self.lis_file):
+            try:
+                for enc in ("cp866", "latin-1", "utf-8"):
+                    try:
+                        with open(self.lis_file, "r", encoding=enc) as f:
+                            lis_text = f.read()
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                self.lis_viewer.setPlainText(lis_text)
+                self._parse_and_fill_summary(lis_text)
+            except Exception:
+                pass
 
     def apply_theme(self, theme):
         self.theme = theme
-        sheet = STYLE_SHEET_LIGHT if theme == "light" else STYLE_SHEET_DARK
+        raw_sheet = STYLE_SHEET_LIGHT if theme == "light" else STYLE_SHEET_DARK
+        scale = max(0.5, min(2.5, self.zoom_level / 100.0))
+
+        if self.zoom_level == 100:
+            sheet = raw_sheet
+        else:
+            sheet = re.sub(
+                r"font-size:\s*(\d+)px",
+                lambda m: f"font-size: {max(8, round(int(m.group(1)) * scale))}px",
+                raw_sheet
+            )
+
         self.setStyleSheet(sheet)
         if hasattr(self, "action_popup"):
             self.action_popup.setStyleSheet(sheet)
+
+        mono_size = max(8, round(11 * scale))
+        mono_font = QFont("Consolas", mono_size)
+        mono_font.setStyleHint(QFont.Monospace)
+        mono_font.setFixedPitch(True)
+
         if hasattr(self, "editor"):
+            self.editor.setFont(mono_font)
             self.editor.set_theme(theme)
+            self.editor.setTabStopDistance(QFontMetrics(mono_font).horizontalAdvance(' ') * 8)
+            self.editor.update_gutter_width(0)
+            self.editor.gutter.update()
+            self._sync_header_widths()
+
+        if hasattr(self, "lis_viewer"):
+            self.lis_viewer.theme = theme
+            self.lis_viewer.setFont(mono_font)
+            self.lis_viewer.setTabStopDistance(QFontMetrics(mono_font).horizontalAdvance(' ') * 8)
+            self.lis_viewer.update_line_number_area_width(0)
+            self.lis_viewer.line_number_area.update()
+
+        if hasattr(self, "console_viewer"):
+            self.console_viewer.setFont(mono_font)
+            self.console_viewer.setTabStopDistance(QFontMetrics(mono_font).horizontalAdvance(' ') * 8)
+
+        table_font = QFont("Segoe UI", max(9, round(12 * scale)))
+        row_height = max(20, round(26 * scale))
+        if hasattr(self, "all_summary_tables"):
+            for tbl in self.all_summary_tables:
+                tbl.setFont(table_font)
+                tbl.horizontalHeader().setFont(table_font)
+                tbl.verticalHeader().setDefaultSectionSize(row_height)
+
         if hasattr(self, "lbl_status_theme"):
             self.lbl_status_theme.setText(f"Тема: {'Светлая' if theme == 'light' else 'Тёмная'}")
+        if hasattr(self, "lbl_status_zoom"):
+            self.lbl_status_zoom.setText(f"Масштаб: {self.zoom_level}%")
+
+    def zoom_in(self):
+        self.set_zoom(self.zoom_level + 10)
+
+    def zoom_out(self):
+        self.set_zoom(self.zoom_level - 10)
+
+    def zoom_reset(self):
+        self.set_zoom(100)
+
+    def set_zoom(self, zoom_val):
+        zoom_val = max(70, min(250, zoom_val))
+        if zoom_val == self.zoom_level and hasattr(self, "_zoom_applied"):
+            return
+        self._zoom_applied = True
+        self.zoom_level = zoom_val
+        self.config["zoom"] = zoom_val
+        ConfigManager.save(self.config)
+        self.apply_theme(self.theme)
 
     def _build_ui(self):
         central = QWidget()
@@ -1666,66 +2416,65 @@ class GPSSStudio(QMainWindow):
         root_layout.setContentsMargins(12, 12, 12, 12)
         root_layout.setSpacing(10)
 
-        # Верхняя панель
-        top_panel = QFrame()
-        top_panel.setObjectName("top_panel")
-        top_panel.setFixedHeight(46)
-        top_layout = QHBoxLayout(top_panel)
+        self.top_panel = QFrame()
+        self.top_panel.setObjectName("top_panel")
+        self.top_panel.setFixedHeight(46)
+        top_layout = QHBoxLayout(self.top_panel)
         top_layout.setContentsMargins(8, 4, 8, 4)
         top_layout.setSpacing(8)
 
         self.btn_run = QPushButton("Запустить (F5)")
         self.btn_run.setObjectName("btn_run")
         self.btn_run.setFixedHeight(32)
+        self.btn_run.setFocusPolicy(Qt.NoFocus)
         self.btn_run.clicked.connect(self.run_simulation)
 
-        btn_reset = QPushButton("Сбросить")
-        btn_reset.setObjectName("btn_reset")
-        btn_reset.setFixedHeight(32)
-        btn_reset.clicked.connect(self.reset_model)
+        self.btn_reset = QPushButton("Сбросить")
+        self.btn_reset.setObjectName("btn_reset")
+        self.btn_reset.setFixedHeight(32)
+        self.btn_reset.setFocusPolicy(Qt.NoFocus)
+        self.btn_reset.clicked.connect(self.reset_model)
 
         self.lbl_status = QLabel(f"Рабочая папка: {self.work_dir}")
         self.lbl_status.setStyleSheet("color: #7a8c9e; margin-left: 6px; font-size: 11px;")
 
-        self.btn_menu = QPushButton("⁝")
+        self.btn_menu = QPushButton("menu")
         self.btn_menu.setObjectName("btn_menu")
-        self.btn_menu.setFixedSize(32, 32)
+        self.btn_menu.setFixedSize(64, 32)
         self.btn_menu.setToolTip("Файл, Папка, Настройки...")
         self.btn_menu.setCursor(Qt.PointingHandCursor)
+        self.btn_menu.setFocusPolicy(Qt.NoFocus)
         self.btn_menu.clicked.connect(self._toggle_action_menu)
 
-        btn_help = QPushButton("help?")
-        btn_help.setObjectName("btn_help")
-        btn_help.setFixedSize(64, 32)
-        btn_help.setToolTip(f"Открыть GitHub репозиторий:\n{GITHUB_URL}")
-        btn_help.setCursor(Qt.PointingHandCursor)
-        btn_help.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
+        self.btn_help = QPushButton("help?")
+        self.btn_help.setObjectName("btn_help")
+        self.btn_help.setFixedSize(64, 32)
+        self.btn_help.setToolTip(f"Открыть GitHub репозиторий:\n{GITHUB_URL}")
+        self.btn_help.setCursor(Qt.PointingHandCursor)
+        self.btn_help.setFocusPolicy(Qt.NoFocus)
+        self.btn_help.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(GITHUB_URL)))
 
         top_layout.addWidget(self.btn_run)
-        top_layout.addWidget(btn_reset)
+        top_layout.addWidget(self.btn_reset)
         top_layout.addWidget(self.lbl_status)
         top_layout.addStretch()
         top_layout.addWidget(self.btn_menu)
-        top_layout.addWidget(btn_help)
+        top_layout.addWidget(self.btn_help)
 
-        root_layout.addWidget(top_panel)
+        root_layout.addWidget(self.top_panel)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(8)
-        mono_font = QFont("Consolas", 11)
-        mono_font.setStyleHint(QFont.Monospace)
 
-        # Левая часть (Редактор кода)
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(0)
 
-        # Шапка редактора кода
-        editor_header = QFrame()
-        editor_header.setObjectName("editor_header")
-        editor_header.setFixedHeight(30)
-        header_layout = QHBoxLayout(editor_header)
+        self.editor_header = QFrame()
+        self.editor_header.setObjectName("editor_header")
+        self.editor_header.setFixedHeight(36)
+        header_layout = QHBoxLayout(self.editor_header)
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(0)
 
@@ -1745,25 +2494,21 @@ class GPSSStudio(QMainWindow):
         header_layout.addWidget(self.lbl_hdr_label)
         header_layout.addWidget(self.lbl_hdr_code, 1)
 
-        left_layout.addWidget(editor_header)
+        left_layout.addWidget(self.editor_header)
 
-        self.editor = GPSSCodeEditor()
-        self.editor.setFont(mono_font)
-        self.editor.setTabStopDistance(QFontMetrics(mono_font).horizontalAdvance(' ') * 8)
+        self.editor = GPSSCodeEditor(main_window=self)
         self.editor.gutter.show_line_numbers = self.show_line_numbers
-        self.editor.set_theme(self.theme)
         self.editor.gutterWidthChanged.connect(self._sync_header_widths)
         self.editor.cursorPositionChanged.connect(self._update_cursor_info)
         self.editor.document().modificationChanged.connect(lambda _: self._update_window_title())
 
-        self.search_bar = SearchBar(self.editor, left_widget)
+        self.search_bar = SearchBar(self.editor, left_widget, title="Поиск:", placeholder="Введите текст для поиска...")
         left_layout.addWidget(self.search_bar)
         left_layout.addWidget(self.editor, 1)
 
         self._sync_header_widths()
         splitter.addWidget(left_widget)
 
-        # Правая часть (Результаты и листинг)
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
         right_layout.setContentsMargins(0, 0, 0, 0)
@@ -1771,34 +2516,154 @@ class GPSSStudio(QMainWindow):
 
         self.tabs = QTabWidget()
 
-        self.summary_table = QTableWidget()
-        self.summary_table.setColumnCount(3)
-        self.summary_table.setHorizontalHeaderLabels(["Параметр", "Значение", "Пояснение"])
-        self.summary_table.horizontalHeader().setHighlightSections(False)
-        self.summary_table.verticalHeader().setHighlightSections(False)
-        self.summary_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.summary_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        self.summary_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.tabs.addTab(self.summary_table, "Сводка для отчёта")
+        self.summary_widget = QWidget()
+        sum_layout = QVBoxLayout(self.summary_widget)
+        sum_layout.setContentsMargins(0, 0, 0, 0)
+        sum_layout.setSpacing(4)
 
-        self.lis_viewer = QPlainTextEdit()
-        self.lis_viewer.setFont(mono_font)
-        self.lis_viewer.setReadOnly(True)
-        self.lis_viewer.setLineWrapMode(QPlainTextEdit.NoWrap)
-        self.tabs.addTab(self.lis_viewer, "Полный листинг (.lis)")
+        sum_toolbar = QHBoxLayout()
+        sum_toolbar.setContentsMargins(4, 4, 4, 4)
+        sum_toolbar.setSpacing(8)
+
+        self.summary_filter_edit = QLineEdit()
+        self.summary_filter_edit.setObjectName("summary_filter_edit")
+        self.summary_filter_edit.setFixedHeight(28)
+        self.summary_filter_edit.setPlaceholderText("Поиск по таблице...")
+        self.summary_filter_edit.textChanged.connect(self._on_summary_filter_changed)
+
+        self.btn_copy_table = QPushButton("Скопировать таблицу")
+        self.btn_copy_table.setObjectName("btn_copy_table")
+        self.btn_copy_table.setFixedHeight(28)
+        self.btn_copy_table.setToolTip("Скопировать содержимое текущей таблицы в буфер обмена")
+        self.btn_copy_table.setCursor(Qt.PointingHandCursor)
+        self.btn_copy_table.setFocusPolicy(Qt.NoFocus)
+        self.btn_copy_table.clicked.connect(self.copy_current_table_to_clipboard)
+
+        sum_toolbar.addWidget(self.summary_filter_edit, 1)
+        sum_toolbar.addWidget(self.btn_copy_table)
+        sum_layout.addLayout(sum_toolbar)
+
+        self.summary_subtabs = QTabWidget()
+        self.summary_subtabs.setObjectName("summary_subtabs")
+        self.summary_subtabs.currentChanged.connect(self._on_summary_subtab_changed)
+
+        self.overview_table = ClickableTableWidget()
+        self.overview_table.setColumnCount(3)
+        self.overview_table.setHorizontalHeaderLabels(["Параметр", "Значение", "Пояснение"])
+        self.overview_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.overview_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.overview_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.summary_table = self.overview_table
+        self.summary_subtabs.addTab(self.overview_table, "Сводка")
+
+        self.fac_table = ClickableTableWidget()
+        self.fac_table.setColumnCount(8)
+        self.fac_table.setHorizontalHeaderLabels([
+            "Устройство", "Загрузка (Util)", "Входов (Entries)", "Среднее время/заявку",
+            "Статус", "% готовности", "Захвативший Xact", "Вытеснивший Xact"
+        ])
+        for c in range(8):
+            self.fac_table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        self.summary_subtabs.addTab(self.fac_table, "Устройства")
+
+        self.q_table = ClickableTableWidget()
+        self.q_table.setColumnCount(10)
+        self.q_table.setHorizontalHeaderLabels([
+            "Очередь", "Макс. длина", "Средняя длина", "Всего заявок",
+            "Нулевых входов", "% нулевых", "Среднее время",
+            "$Среднее время", "Таблица", "Текущая длина"
+        ])
+        for c in range(10):
+            self.q_table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        self.summary_subtabs.addTab(self.q_table, "Очереди")
+
+        self.storage_table = ClickableTableWidget()
+        self.storage_table.setColumnCount(9)
+        self.storage_table.setHorizontalHeaderLabels([
+            "Память", "Ёмкость", "Среднее содерж.", "Коэффициент загрузки",
+            "Число входов", "Среднее время", "Статус", "Текущая занятость", "Пик (Max)"
+        ])
+        for c in range(9):
+            self.storage_table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        self.summary_subtabs.addTab(self.storage_table, "Памяти")
+
+        self.block_table = ClickableTableWidget()
+        self.block_table.setColumnCount(3)
+        self.block_table.setHorizontalHeaderLabels(["Блок / Метка", "Транзактов сейчас (Current)", "Всего транзактов (Total)"])
+        self.block_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.block_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.block_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.summary_subtabs.addTab(self.block_table, "Блоки")
+
+        self.sys_table = ClickableTableWidget()
+        self.sys_table.setColumnCount(3)
+        self.sys_table.setHorizontalHeaderLabels(["Параметр", "Значение", "Пояснение"])
+        self.sys_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self.sys_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        self.sys_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
+        self.summary_subtabs.addTab(self.sys_table, "Система")
+
+        self.all_summary_tables = [
+            self.overview_table, self.fac_table, self.q_table,
+            self.storage_table, self.block_table, self.sys_table
+        ]
+
+        for tbl in self.all_summary_tables:
+            tbl.ctrlClickedRow.connect(lambda row, t=tbl: self._jump_to_summary_row(t, row))
+            tbl.cellClicked.connect(lambda r, c, t=tbl: self._on_table_cell_clicked(t, r, c))
+            tbl.cellDoubleClicked.connect(lambda r, c, t=tbl: self._jump_to_summary_row(t, r))
+
+        sum_layout.addWidget(self.summary_subtabs, 1)
+        self.tabs.addTab(self.summary_widget, "Сводка для отчёта")
+
+        self.lis_widget = QWidget()
+        lis_layout = QVBoxLayout(self.lis_widget)
+        lis_layout.setContentsMargins(0, 0, 0, 0)
+        lis_layout.setSpacing(0)
+
+        lis_header = QFrame()
+        lis_header.setFixedHeight(36)
+        lis_header.setObjectName("editor_header")
+        lis_hdr_layout = QHBoxLayout(lis_header)
+        lis_hdr_layout.setContentsMargins(8, 4, 8, 4)
+        lis_hdr_layout.setSpacing(8)
+
+        self.btn_lis_find = QPushButton("Найти")
+        self.btn_lis_find.setObjectName("btn_lis_find")
+        self.btn_lis_find.setFixedHeight(28)
+        self.btn_lis_find.setCursor(Qt.PointingHandCursor)
+        self.btn_lis_find.setFocusPolicy(Qt.NoFocus)
+        self.btn_lis_find.clicked.connect(self._show_listing_search)
+
+        self.lbl_lis_file = QLabel("model.lis")
+        self.lbl_lis_file.setObjectName("lbl_lis_file")
+
+        lis_hdr_layout.addWidget(self.btn_lis_find)
+        lis_hdr_layout.addWidget(self.lbl_lis_file)
+        lis_hdr_layout.addStretch()
+
+        self.lis_viewer = ListingViewer(main_window=self)
+        self.lis_viewer.setStyleSheet("font-family: Consolas, 'Courier New', monospace;")
+        self.lis_search_bar = SearchBar(self.lis_viewer, self.lis_widget, title="Поиск:", placeholder="Введите текст для поиска по листингу...")
+
+        lis_layout.addWidget(lis_header)
+        lis_layout.addWidget(self.lis_search_bar)
+        lis_layout.addWidget(self.lis_viewer, 1)
+
+        self.tabs.addTab(self.lis_widget, "Полный листинг (.lis)")
 
         self.console_viewer = QPlainTextEdit()
-        self.console_viewer.setFont(mono_font)
         self.console_viewer.setReadOnly(True)
+        self.console_viewer.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.console_viewer.setStyleSheet("font-family: Consolas, 'Courier New', monospace;")
         self.tabs.addTab(self.console_viewer, "Вывод консоли")
 
         right_layout.addWidget(self.tabs)
         splitter.addWidget(right_widget)
 
-        splitter.setSizes([500, 660])
+        splitter.setSizes([320, 1120])
         root_layout.addWidget(splitter, 1)
 
-        # Строка состояния
         status_bar = self.statusBar()
         status_bar.setSizeGripEnabled(False)
         self.lbl_status_msg = QLabel("Готов")
@@ -1816,11 +2681,26 @@ class GPSSStudio(QMainWindow):
         self.lbl_status_theme = QLabel(f"Тема: {'Светлая' if self.theme == 'light' else 'Тёмная'}")
         self.lbl_status_theme.setObjectName("status_item")
 
+        self.lbl_status_zoom = QLabel(f"Масштаб: {self.zoom_level}%")
+        self.lbl_status_zoom.setObjectName("status_item")
+        self.lbl_status_zoom.setToolTip("Масштаб: Ctrl + / Ctrl - / Ctrl+0 (сброс)")
+        self.lbl_status_zoom.setCursor(Qt.PointingHandCursor)
+
+        def zoom_click(ev):
+            if ev.button() == Qt.LeftButton:
+                self.zoom_reset()
+        self.lbl_status_zoom.mousePressEvent = zoom_click
+
         status_bar.addWidget(self.lbl_status_msg, 1)
         status_bar.addPermanentWidget(self.lbl_status_lines)
         status_bar.addPermanentWidget(self.lbl_status_pos)
         status_bar.addPermanentWidget(self.lbl_status_os)
         status_bar.addPermanentWidget(self.lbl_status_theme)
+        status_bar.addPermanentWidget(self.lbl_status_zoom)
+
+    def _show_listing_search(self):
+        self.tabs.setCurrentIndex(1)
+        self.lis_search_bar.show_bar()
 
     def _toggle_action_menu(self):
         if self.action_popup.isVisible():
@@ -1842,7 +2722,7 @@ class GPSSStudio(QMainWindow):
     def _setup_shortcuts(self):
         QShortcut(QKeySequence("F5"), self, self.run_simulation)
         QShortcut(QKeySequence("Ctrl+G"), self, self._go_to_line)
-        QShortcut(QKeySequence("Ctrl+F"), self, self.search_bar.show_bar)
+        QShortcut(QKeySequence("Ctrl+F"), self, self._handle_find_shortcut)
         QShortcut(QKeySequence("Ctrl+N"), self, self.new_file)
         QShortcut(QKeySequence("Ctrl+O"), self, self.open_file)
         QShortcut(QKeySequence("Ctrl+S"), self, self.save_file)
@@ -1850,6 +2730,99 @@ class GPSSStudio(QMainWindow):
         QShortcut(QKeySequence("Ctrl+1"), self, lambda: self.tabs.setCurrentIndex(0))
         QShortcut(QKeySequence("Ctrl+2"), self, lambda: self.tabs.setCurrentIndex(1))
         QShortcut(QKeySequence("Ctrl+3"), self, lambda: self.tabs.setCurrentIndex(2))
+
+        QShortcut(QKeySequence.ZoomIn, self, self.zoom_in)
+        QShortcut(QKeySequence.ZoomOut, self, self.zoom_out)
+        QShortcut(QKeySequence("Ctrl++"), self, self.zoom_in)
+        QShortcut(QKeySequence("Ctrl+="), self, self.zoom_in)
+        QShortcut(QKeySequence("Ctrl+-"), self, self.zoom_out)
+        QShortcut(QKeySequence("Ctrl+0"), self, self.zoom_reset)
+
+    def _handle_find_shortcut(self):
+        if self.tabs.currentIndex() == 1 or self.lis_viewer.hasFocus():
+            self.lis_search_bar.show_bar()
+        else:
+            self.search_bar.show_bar()
+
+    def _on_table_cell_clicked(self, table, row, col):
+        if QApplication.keyboardModifiers() & Qt.ControlModifier:
+            self._jump_to_summary_row(table, row)
+
+    def _jump_to_summary_row(self, table, row):
+        item = table.item(row, 0)
+        if not item:
+            return
+        line_no = item.data(Qt.UserRole)
+        if not line_no or line_no <= 0:
+            return
+        self.tabs.setCurrentIndex(1)
+        self.jump_to_listing_line(line_no)
+
+    def jump_to_listing_line(self, line_no):
+        doc = self.lis_viewer.document()
+        block = doc.findBlockByNumber(line_no - 1)
+        if not block.isValid():
+            return
+
+        cursor = QTextCursor(block)
+        self.lis_viewer.setTextCursor(cursor)
+        self.lis_viewer.centerCursor()
+        self.lis_viewer.setFocus()
+
+        sel = QTextEdit.ExtraSelection()
+        is_dark = (self.theme == "dark")
+        sel.format.setBackground(QColor("#1e4976" if is_dark else "#ffe58f"))
+        sel.format.setProperty(QTextFormat.FullWidthSelection, True)
+        sel.cursor = cursor
+        self.lis_viewer.setExtraSelections([sel])
+
+        self.lbl_status_msg.setText(f"Переход к строке {line_no} в листинге")
+
+        if hasattr(self, "_highlight_timer") and self._highlight_timer:
+            self._highlight_timer.stop()
+        else:
+            self._highlight_timer = QTimer(self)
+            self._highlight_timer.setSingleShot(True)
+            self._highlight_timer.timeout.connect(lambda: self.lis_viewer.setExtraSelections([]))
+
+        self._highlight_timer.start(3000)
+
+    def copy_current_table_to_clipboard(self):
+        cur_subtab = self.summary_subtabs.currentWidget()
+        if not cur_subtab or not isinstance(cur_subtab, QTableWidget):
+            return
+        table = cur_subtab
+        lines = []
+        headers = []
+        for c in range(table.columnCount()):
+            it = table.horizontalHeaderItem(c)
+            headers.append(it.text() if it else f"Колонка {c+1}")
+        lines.append("\t".join(headers))
+
+        for r in range(table.rowCount()):
+            if table.isRowHidden(r):
+                continue
+            row_data = []
+            for c in range(table.columnCount()):
+                it = table.item(r, c)
+                row_data.append(it.text() if it else "")
+            lines.append("\t".join(row_data))
+
+        tsv_text = "\n".join(lines)
+        QApplication.clipboard().setText(tsv_text)
+        tab_name = self.summary_subtabs.tabText(self.summary_subtabs.currentIndex())
+        self.lbl_status_msg.setText(f"Таблица '{tab_name}' скопирована в буфер обмена")
+
+    def _on_summary_filter_changed(self, text):
+        cur_subtab = self.summary_subtabs.currentWidget()
+        if cur_subtab and isinstance(cur_subtab, QTableWidget):
+            filter_table(cur_subtab, text)
+
+    def _on_summary_subtab_changed(self, _):
+        text = self.summary_filter_edit.text()
+        cur_subtab = self.summary_subtabs.currentWidget()
+        if cur_subtab and isinstance(cur_subtab, QTableWidget):
+            filter_table(cur_subtab, text)
 
     def _update_cursor_info(self):
         cursor = self.editor.textCursor()
@@ -1891,6 +2864,10 @@ class GPSSStudio(QMainWindow):
         self.editor.load_code(DEFAULT_TEMPLATE)
         self.editor.document().setModified(False)
         self._update_window_title()
+        if hasattr(self, "search_bar"):
+            self.search_bar.hide_bar()
+            self.search_bar.edit_find.clear()
+        self.reset_right_frame()
         self.lbl_status_msg.setText("Создана новая модель")
 
     def open_file(self):
@@ -1957,9 +2934,43 @@ class GPSSStudio(QMainWindow):
             QMessageBox.critical(self, "Ошибка сохранения", f"Не удалось сохранить файл:\n{e}")
             return False
 
+    def reset_right_frame(self):
+        if hasattr(self, "summary_filter_edit"):
+            self.summary_filter_edit.clear()
+        if hasattr(self, "all_summary_tables"):
+            for tbl in self.all_summary_tables:
+                tbl.setRowCount(0)
+        if hasattr(self, "summary_subtabs"):
+            self.summary_subtabs.setTabVisible(3, True)
+            self.summary_subtabs.setCurrentIndex(0)
+
+        if hasattr(self, "lis_viewer"):
+            self.lis_viewer.clear()
+            self.lis_viewer.setExtraSelections([])
+        if hasattr(self, "_highlight_timer") and self._highlight_timer:
+            self._highlight_timer.stop()
+        if hasattr(self, "lis_search_bar"):
+            self.lis_search_bar.hide_bar()
+            self.lis_search_bar.edit_find.clear()
+        if hasattr(self, "lbl_lis_file"):
+            self.lbl_lis_file.setText("model.lis")
+
+        if hasattr(self, "console_viewer"):
+            self.console_viewer.clear()
+
+        if hasattr(self, "tabs"):
+            self.tabs.setCurrentIndex(0)
+
     def reset_model(self):
         self.editor.load_code(DEFAULT_TEMPLATE)
-        self.lbl_status_msg.setText("Код сброшен к базовому шаблону")
+        self.current_file_path = None
+        self.editor.document().setModified(False)
+        self._update_window_title()
+        if hasattr(self, "search_bar"):
+            self.search_bar.hide_bar()
+            self.search_bar.edit_find.clear()
+        self.reset_right_frame()
+        self.lbl_status_msg.setText("Модель и результаты сброшены")
 
     def open_work_directory(self):
         if not os.path.exists(self.work_dir):
@@ -1982,6 +2993,7 @@ class GPSSStudio(QMainWindow):
         self.work_dir = self.config.get("work_dir", self.current_dir)
         self.theme = self.config.get("theme", "dark")
         self.show_line_numbers = self.config.get("show_line_numbers", False)
+        self.zoom_level = self.config.get("zoom", 100)
 
         self.editor.gutter.show_line_numbers = self.show_line_numbers
         self.editor.update_gutter_width(0)
@@ -2087,62 +3099,235 @@ class GPSSStudio(QMainWindow):
         self.tabs.setCurrentIndex(0)
         self.lbl_status_msg.setText("Симуляция успешно завершена")
 
-    def _parse_and_fill_summary(self, text):
-        data = []
+    def _populate_key_value_table(self, table, data):
+        table.setRowCount(len(data))
+        for row, item_info in enumerate(data):
+            param = item_info[0]
+            val = item_info[1]
+            desc = item_info[2]
+            line_no = item_info[3] if len(item_info) > 3 else 1
 
-        clock_match = re.search(r"Absolute Clock:\s*([\d\.]+)", text, re.IGNORECASE)
-        clock = clock_match.group(1) if clock_match else "Н/Д"
-        data.append(("Время моделирования (Absolute Clock)", clock, "Общая длительность работы системы в тактах"))
-
-        fac_match = re.search(
-            r"Facility\s+Total\s+Avail.*?\n(?:[^\n]*\n)?\s*(\w+)\s+([\d\.]+)\s+(?:[\d\.]+\s+)*(\d+)\s+([\d\.]+)",
-            text,
-            re.IGNORECASE
-        )
-        if not fac_match:
-            fac_match = re.search(
-                r"^[ \t]*(?:MEM|\w+)[ \t]+([\d\.]+)[ \t]+(?:[\d\.]+[ \t]+)*(\d+)[ \t]+([\d\.]+)",
-                text,
-                re.MULTILINE
-            )
-
-        if fac_match:
-            _, util, entries, avg_time = fac_match.groups()
-            data.append(("Обработано заявок ОП (Entries)", entries, "Количество заявок, обслуженных памятью"))
-            data.append(("Коэффициент загрузки ОП (Avg-Util)", util, "Доля времени занятости памяти (от 0 до 1)"))
-            data.append(("Среднее время обработки (Avg Time/Xact)", avg_time, "Время обработки одного запроса памятью (такты)"))
-
-        q_match = re.search(
-            r"Queue\s+Maximum\s+Average.*?\n(?:[^\n]*\n)?\s*(\w+)\s+(\d+)\s+([\d\.]+)\s+(\d+)\s+\d+\s+[\d\.]+\s+([\d\.]+)",
-            text,
-            re.IGNORECASE
-        )
-        if not q_match:
-            q_match = re.search(
-                r"^[ \t]*(?:AAA|\w+)[ \t]+(\d+)[ \t]+([\d\.]+)[ \t]+(\d+)[ \t]+\d+[ \t]+[\d\.]+[ \t]+([\d\.]+)",
-                text,
-                re.MULTILINE
-            )
-
-        if q_match:
-            _, q_max, q_avg, q_total, q_time = q_match.groups()
-            data.append(("Всего заявок в очереди (Total Entries)", q_total, "Сколько всего заявок поступило от процессора"))
-            data.append(("Макс. длина очереди (Maximum Contents)", q_max, "Пиковое число заявок, ожидавших в очереди"))
-            data.append(("Средняя длина очереди (Average Contents)", q_avg, "Среднее количество ожидающих запросов"))
-            data.append(("Среднее время ожидания (Average Time/Unit)", q_time, "Среднее время нахождения запроса в очереди (такты)"))
-
-        self.summary_table.setRowCount(len(data))
-        for row, (param, val, desc) in enumerate(data):
             it_param = QTableWidgetItem(param)
             it_val = QTableWidgetItem(val)
-            it_val.setTextAlignment(Qt.AlignCenter)
-            it_val.setForeground(QColor("#bcdfff" if self.theme == "dark" else "#0969da"))
             it_desc = QTableWidgetItem(desc)
 
-            self.summary_table.setItem(row, 0, it_param)
-            self.summary_table.setItem(row, 1, it_val)
-            self.summary_table.setItem(row, 2, it_desc)
+            for it in (it_param, it_val, it_desc):
+                it.setData(Qt.UserRole, line_no)
+                it.setToolTip(f"Ctrl + Клик для перехода к строке {line_no} в листинге")
+                it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
 
+            it_val.setTextAlignment(Qt.AlignCenter)
+            it_val.setForeground(QColor("#bcdfff" if self.theme == "dark" else "#0969da"))
+
+            table.setItem(row, 0, it_param)
+            table.setItem(row, 1, it_val)
+            table.setItem(row, 2, it_desc)
+
+    def _parse_and_fill_summary(self, text):
+        p = GPSSListingParser(text)
+
+        overview_data = []
+
+        abs_c = p.clocks.get("absolute", "Н/Д")
+        rel_c = p.clocks.get("relative", abs_c)
+        clock_line = p.clocks.get("line_no", 1)
+        overview_data.append(("Время моделирования (Absolute Clock)", abs_c, "Общая длительность работы системы в тактах", clock_line))
+        if rel_c != abs_c and rel_c != "Н/Д":
+            overview_data.append(("Относительное время (Relative Clock)", rel_c, "Время с момента последнего сброса статистики", clock_line))
+
+        if p.model_size:
+            ctrl = p.model_size.get("control_statements", "")
+            blocks_cnt = p.model_size.get("blocks", "")
+            msz_line = p.model_size.get("line_no", 1)
+            overview_data.append(("Размер модели", f"{blocks_cnt} блоков, {ctrl} упр. опер.", "Число блоков и управляющих операторов в модели", msz_line))
+
+        if p.execution_stats:
+            tot_b = p.execution_stats.get("total_blocks", "")
+            b_sec = p.execution_stats.get("blocks_per_sec", "")
+            us_blk = p.execution_stats.get("us_per_block", "")
+            ex_line = p.execution_stats.get("line_no", 1)
+            if tot_b:
+                overview_data.append(("Всего выполнено блоков (Total Executions)", tot_b, "Суммарное число входов транзактов во все блоки модели", ex_line))
+            if b_sec:
+                overview_data.append(("Скорость симуляции (Blocks / second)", b_sec, "Производительность интерпретатора GPSS", ex_line))
+            if us_blk:
+                overview_data.append(("Время на один блок (Microseconds / Block)", us_blk, "Среднее процессорное время на обработку одного блока", ex_line))
+
+        if p.common_storage:
+            in_use = p.common_storage.get("in_use", "")
+            avail = p.common_storage.get("available", "")
+            max_u = p.common_storage.get("max_used", "")
+            cs_line = p.common_storage.get("line_no", 1)
+            overview_data.append(("Память системы (Common Storage)", f"{in_use} байт занято (макс. {max_u})", f"Доступно: {avail} байт", cs_line))
+
+        for f in p.facilities:
+            fn = f["name"]
+            lno = f["line_no"]
+            overview_data.append((f"Устройство {fn}: Загрузка (Avg-Util)", f["util"], f"Коэффициент занятости прибора {fn} [0..1]", lno))
+            overview_data.append((f"Устройство {fn}: Заявок (Entries)", f["entries"], f"Количество заявок, обслуженных прибором {fn}", lno))
+            overview_data.append((f"Устройство {fn}: Среднее время (Avg Time)", f["avg_time"], f"Среднее время занятия прибора {fn} (такты)", lno))
+            st_text = f["status"] + (f" (Xact: {f['seizing']})" if f['seizing'] else "")
+            overview_data.append((f"Устройство {fn}: Статус", st_text, f"Текущее состояние прибора {fn}", lno))
+
+        for q in p.queues:
+            qn = q["name"]
+            lno = q["line_no"]
+            overview_data.append((f"Очередь {qn}: Всего заявок (Total Entries)", q["total_e"], f"Общее число заявок, поступивших в очередь {qn}", lno))
+            overview_data.append((f"Очередь {qn}: Макс. длина (Max Contents)", q["max_c"], f"Пиковая длина очереди {qn}", lno))
+            overview_data.append((f"Очередь {qn}: Средняя длина (Avg Contents)", q["avg_c"], f"Среднее число ожидающих заявок в очереди {qn}", lno))
+            overview_data.append((f"Очередь {qn}: Среднее время ожидания", q["avg_t"], f"Среднее время нахождения в очереди {qn} (такты)", lno))
+            overview_data.append((f"Очередь {qn}: Доля без ожидания (%)", f"{q['pct_z']}%", f"Процент заявок с нулевым временем ожидания (нулевые входы: {q['zero_e']})", lno))
+
+        for s in p.storages:
+            sn = s["name"]
+            lno = s["line_no"]
+            overview_data.append((f"Память {sn}: Загрузка (Avg-Util)", s["util"], f"Коэффициент загрузки многоканального устройства {sn}", lno))
+            overview_data.append((f"Память {sn}: Ёмкость (Capacity)", s["capacity"], f"Максимальная вместимость памяти {sn}", lno))
+            overview_data.append((f"Память {sn}: Среднее число занятых", s["avg_contents"], f"Среднее количество одновременно занятых каналов {sn}", lno))
+            overview_data.append((f"Память {sn}: Всего заявок (Entries)", s["entries"], f"Число заявок, вошедших в память {sn}", lno))
+
+        for r in p.random_streams:
+            st = r["stream"]
+            lno = r["line_no"]
+            overview_data.append((f"ГСЧ поток {st}: Число выборок", r["sample_count"], f"Текущая позиция: {r['current_pos']}, исходная: {r['initial_pos']}", lno))
+
+        self._populate_key_value_table(self.overview_table, overview_data)
+
+        self.fac_table.setRowCount(len(p.facilities))
+        for row, f in enumerate(p.facilities):
+            lno = f["line_no"]
+            items = [
+                f["name"],
+                f["util"],
+                f["entries"],
+                f["avg_time"],
+                f["status"],
+                f["pct_avail"] or "100.0",
+                f["seizing"] or "-",
+                f["preempting"] or "-"
+            ]
+            for col, val in enumerate(items):
+                it = QTableWidgetItem(val)
+                it.setData(Qt.UserRole, lno)
+                it.setToolTip(f"Ctrl + Клик для перехода к строке {lno} в листинге")
+                it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                if col in (1, 2, 3, 5, 6, 7):
+                    it.setTextAlignment(Qt.AlignCenter)
+                if col == 1:
+                    it.setForeground(QColor("#bcdfff" if self.theme == "dark" else "#0969da"))
+                elif col == 4:
+                    it.setForeground(QColor("#7ee787" if f['status'] == 'AVAIL' else "#ffa657"))
+                self.fac_table.setItem(row, col, it)
+
+        self.q_table.setRowCount(len(p.queues))
+        for row, q in enumerate(p.queues):
+            lno = q["line_no"]
+            items = [
+                q["name"],
+                q["max_c"],
+                q["avg_c"],
+                q["total_e"],
+                q["zero_e"],
+                f"{q['pct_z']}%",
+                q["avg_t"],
+                q["dollar_avg_t"],
+                q["qtable"] or "-",
+                q["cur_c"]
+            ]
+            for col, val in enumerate(items):
+                it = QTableWidgetItem(val)
+                it.setData(Qt.UserRole, lno)
+                it.setToolTip(f"Ctrl + Клик для перехода к строке {lno} в листинге")
+                it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                if col >= 1:
+                    it.setTextAlignment(Qt.AlignCenter)
+                if col in (1, 2, 3, 6):
+                    it.setForeground(QColor("#bcdfff" if self.theme == "dark" else "#0969da"))
+                self.q_table.setItem(row, col, it)
+
+        if p.storages:
+            self.summary_subtabs.setTabVisible(3, True)
+            self.storage_table.setRowCount(len(p.storages))
+            for row, s in enumerate(p.storages):
+                lno = s["line_no"]
+                items = [
+                    s["name"],
+                    s["capacity"],
+                    s["avg_contents"],
+                    s["util"],
+                    s["entries"],
+                    s["avg_time"],
+                    s["status"],
+                    s["cur_contents"],
+                    s["max_contents"]
+                ]
+                for col, val in enumerate(items):
+                    it = QTableWidgetItem(val)
+                    it.setData(Qt.UserRole, lno)
+                    it.setToolTip(f"Ctrl + Клик для перехода к строке {lno} в листинге")
+                    it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                    if col >= 1:
+                        it.setTextAlignment(Qt.AlignCenter)
+                    if col in (1, 2, 3, 4, 5):
+                        it.setForeground(QColor("#bcdfff" if self.theme == "dark" else "#0969da"))
+                    self.storage_table.setItem(row, col, it)
+        else:
+            self.storage_table.setRowCount(0)
+            self.summary_subtabs.setTabVisible(3, False)
+
+        self.block_table.setRowCount(len(p.blocks))
+        for row, b in enumerate(p.blocks):
+            lno = b["line_no"]
+            it_blk = QTableWidgetItem(b["block"])
+            it_cur = QTableWidgetItem(b["current"])
+            it_tot = QTableWidgetItem(b["total"])
+
+            for it in (it_blk, it_cur, it_tot):
+                it.setData(Qt.UserRole, lno)
+                it.setToolTip(f"Ctrl + Клик для перехода к строке {lno} в листинге")
+                it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+
+            it_cur.setTextAlignment(Qt.AlignCenter)
+            it_tot.setTextAlignment(Qt.AlignCenter)
+            if b["current"] != "0":
+                it_cur.setForeground(QColor("#ffa657" if self.theme == "dark" else "#b78103"))
+            it_tot.setForeground(QColor("#bcdfff" if self.theme == "dark" else "#0969da"))
+
+            self.block_table.setItem(row, 0, it_blk)
+            self.block_table.setItem(row, 1, it_cur)
+            self.block_table.setItem(row, 2, it_tot)
+
+        sys_data = []
+        if p.clocks:
+            sys_data.append(("Время Relative Clock", p.clocks.get("relative", ""), "Относительные часы модели", p.clocks.get("line_no", 1)))
+            sys_data.append(("Время Absolute Clock", p.clocks.get("absolute", ""), "Абсолютные часы модели", p.clocks.get("line_no", 1)))
+        if p.execution_stats:
+            sys_data.append(("Всего выполнено блоков", p.execution_stats.get("total_blocks", ""), "Суммарное число входов транзактов", p.execution_stats.get("line_no", 1)))
+            sys_data.append(("Скорость симуляции", f"{p.execution_stats.get('blocks_per_sec', '')} блоков/сек", "Скорость выполнения интерпретатора", p.execution_stats.get("line_no", 1)))
+            sys_data.append(("Время на один блок", f"{p.execution_stats.get('us_per_block', '')} мкс", "Микросекунд на обработку блока", p.execution_stats.get("line_no", 1)))
+        if p.storage_requirements:
+            sr = p.storage_requirements
+            s_line = sr.get("line_no", 1)
+            sys_data.append(("Память: Скомпилированный код", f"{sr.get('compiled_code', '')} байт", "Размер исполняемого кода модели", s_line))
+            sys_data.append(("Память: Скомпилированные данные", f"{sr.get('compiled_data', '')} байт", "Статические данные модели", s_line))
+            sys_data.append(("Память: Сущности (Entities)", f"{sr.get('entities', '')} байт", "Память под структуры очередей, приборов и т.д.", s_line))
+            sys_data.append(("Память: Common Storage", f"{sr.get('common', '')} байт", "Размер общей памяти GPSS", s_line))
+            sys_data.append(("Память: ИТОГО", f"{sr.get('total', '')} байт", "Общие требования к памяти", s_line))
+        if p.common_storage:
+            cs = p.common_storage
+            cs_line = cs.get("line_no", 1)
+            sys_data.append(("Common Storage: Доступно", f"{cs.get('available', '')} байт", "Свободная динамическая память", cs_line))
+            sys_data.append(("Common Storage: Занято", f"{cs.get('in_use', '')} байт", "Текущее использование", cs_line))
+            sys_data.append(("Common Storage: Пик занятости", f"{cs.get('max_used', '')} байт", "Максимальное использование памяти за прогон", cs_line))
+        for r in p.random_streams:
+            sys_data.append((f"ГСЧ поток #{r['stream']}", f"Выборок: {r['sample_count']} (поз: {r['current_pos']})", f"Антитетичность: {r['antithetic']}, Начало: {r['initial_pos']}, Хи-квадрат: {r['chi_square']}", r["line_no"]))
+
+        self._populate_key_value_table(self.sys_table, sys_data)
+
+        for tbl in self.all_summary_tables:
+            tbl.resizeColumnsToContents()
+            if tbl.columnCount() >= 3 and tbl in (self.overview_table, self.sys_table):
+                tbl.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
