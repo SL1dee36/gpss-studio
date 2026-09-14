@@ -5,3 +5,6 @@ __pycache__
 *.lis
 *.ini
 settings.json
+*.build
+*.dist
+*.onefile-build
