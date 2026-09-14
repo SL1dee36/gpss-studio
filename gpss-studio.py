@@ -31,13 +31,24 @@ CODE_VAR_16 = DEFAULT_TEMPLATE
 GITHUB_URL = "https://github.com/SL1dee36/gpss-studio"
 
 def get_app_dir():
-    if "NUITKA_ONEFILE_BINARY" in os.environ:
-        return os.path.dirname(os.path.abspath(os.environ["NUITKA_ONEFILE_BINARY"]))
-    if getattr(sys, "frozen", False):
+    if "__compiled__" in globals():
+        c = globals()["__compiled__"]
+        if hasattr(c, "containing_dir") and c.containing_dir:
+            return os.path.abspath(c.containing_dir)
+        if hasattr(c, "original_argv0") and c.original_argv0:
+            return os.path.dirname(os.path.abspath(c.original_argv0))
+    if hasattr(sys, "_MEIPASS") and getattr(sys, "frozen", False):
         return os.path.dirname(os.path.abspath(sys.executable))
+    if getattr(sys, "frozen", False) and sys.argv and sys.argv[0]:
+        return os.path.dirname(os.path.abspath(sys.argv[0]))
     return os.path.dirname(os.path.abspath(__file__))
 
 def get_resource_path(relative_path):
+    app_dir = get_app_dir()
+    app_path = os.path.join(app_dir, relative_path)
+    if os.path.exists(app_path):
+        return app_path
+
     candidates = []
     if hasattr(sys, "_MEIPASS"):
         candidates.append(sys._MEIPASS)
@@ -45,7 +56,6 @@ def get_resource_path(relative_path):
         candidates.append(os.path.dirname(os.path.abspath(__file__)))
     except Exception:
         pass
-    candidates.append(get_app_dir())
     candidates.append(os.getcwd())
 
     for c_dir in candidates:
@@ -54,7 +64,8 @@ def get_resource_path(relative_path):
             if os.path.exists(full_path):
                 return full_path
 
-    return os.path.join(get_app_dir(), relative_path)
+    return app_path
+
 
 
 GPSS_CORE_KEYWORDS = {
@@ -3109,16 +3120,23 @@ class GPSSStudio(QMainWindow):
                 except Exception:
                     pass
 
+            kwargs = {
+                "cwd": self.work_dir,
+                "capture_output": True,
+                "text": True,
+                "errors": "replace",
+                "timeout": 15
+            }
+            if sys.platform == "win32":
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
             process = subprocess.run(
                 [self.exe_path, "model.gps"],
                 input="model.gps\n",
-                cwd=self.work_dir,
-                capture_output=True,
-                text=True,
-                timeout=5
+                **kwargs
             )
         except subprocess.TimeoutExpired:
-            QMessageBox.warning(self, "Таймаут", "Процесс GPSS завис. Проверьте условия завершения модели.")
+            QMessageBox.warning(self, "Таймаут", "Процесс GPSS превысил таймаут ожидания (15 сек). Проверьте условия завершения модели.")
             return
         except Exception as e:
             QMessageBox.critical(self, "Ошибка запуска", f"Сбой при запуске GPSS:\n{e}")
