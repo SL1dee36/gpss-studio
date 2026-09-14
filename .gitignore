@@ -1,0 +1,11 @@
+# Proprietary compiler: each user supplies their own copy
+gpssh.exe
+GPSSH.EXE
+gpssh.ini
+
+# Generated on every run
+model.gps
+model.lis
+
+__pycache__/
+.venv/
