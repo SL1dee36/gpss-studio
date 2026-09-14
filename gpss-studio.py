@@ -20,7 +20,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import (
     QFont, QFontMetrics, QKeySequence, QShortcut, QColor, 
     QPainter, QPen, QTextCursor, QTextBlockUserData, QDesktopServices,
-    QSyntaxHighlighter, QTextCharFormat, QTextDocument, QTextFormat
+    QSyntaxHighlighter, QTextCharFormat, QTextDocument, QTextFormat,
+    QIcon
 )
 from PySide6.QtCore import Qt, QRect, QSize, QUrl, QRegularExpression, Signal, QPoint, QTimer
 
@@ -28,6 +29,33 @@ DEFAULT_TEMPLATE = """"""
 
 CODE_VAR_16 = DEFAULT_TEMPLATE
 GITHUB_URL = "https://github.com/SL1dee36/gpss-studio"
+
+def get_app_dir():
+    if "NUITKA_ONEFILE_BINARY" in os.environ:
+        return os.path.dirname(os.path.abspath(os.environ["NUITKA_ONEFILE_BINARY"]))
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(os.path.abspath(sys.executable))
+    return os.path.dirname(os.path.abspath(__file__))
+
+def get_resource_path(relative_path):
+    candidates = []
+    if hasattr(sys, "_MEIPASS"):
+        candidates.append(sys._MEIPASS)
+    try:
+        candidates.append(os.path.dirname(os.path.abspath(__file__)))
+    except Exception:
+        pass
+    candidates.append(get_app_dir())
+    candidates.append(os.getcwd())
+
+    for c_dir in candidates:
+        if c_dir:
+            full_path = os.path.join(c_dir, relative_path)
+            if os.path.exists(full_path):
+                return full_path
+
+    return os.path.join(get_app_dir(), relative_path)
+
 
 GPSS_CORE_KEYWORDS = {
     "GENERATE", "TERMINATE", "SEIZE", "RELEASE", "ADVANCE",
@@ -1027,14 +1055,15 @@ class ConfigManager:
 
     @classmethod
     def get_config_path(cls):
-        app_dir = os.path.dirname(os.path.abspath(__file__))
+        app_dir = get_app_dir()
         return os.path.join(app_dir, cls.CONFIG_FILE)
 
     @classmethod
     def load(cls):
-        app_dir = os.path.dirname(os.path.abspath(__file__))
+        app_dir = get_app_dir()
         is_win = sys.platform == "win32"
-        default_exe = os.path.join(app_dir, "gpssh.exe" if is_win else "gpssh")
+        exe_name = "gpssh.exe" if is_win else "gpssh"
+        default_exe = get_resource_path(exe_name)
 
         defaults = {
             "target_os": "windows" if is_win else "linux",
@@ -1053,6 +1082,17 @@ class ConfigManager:
                 defaults.update(data)
             except Exception:
                 pass
+
+        # Если путь к исполняемому файлу из настроек не существует, пробуем fallback
+        if not os.path.exists(defaults.get("executable_path", "")):
+            candidate = get_resource_path(exe_name)
+            if os.path.exists(candidate):
+                defaults["executable_path"] = candidate
+
+        # Если рабочая папка не существует, сбрасываем на папку приложения
+        if not os.path.exists(defaults.get("work_dir", "")):
+            defaults["work_dir"] = app_dir
+
         return defaults
 
     @classmethod
@@ -2007,7 +2047,7 @@ class SettingsDialog(QDialog):
     def _open_folder(self):
         folder = self.edit_work_dir.text().strip()
         if not os.path.isdir(folder):
-            folder = os.path.dirname(os.path.abspath(__file__))
+            folder = get_app_dir()
         QDesktopServices.openUrl(QUrl.fromLocalFile(folder))
 
     def _save(self):
@@ -2289,14 +2329,21 @@ class GPSSStudio(QMainWindow):
         self.resize(1440, 780)
         self.current_file_path = None
 
-        self.current_dir = os.path.dirname(os.path.abspath(__file__))
+        self.current_dir = get_app_dir()
         self.config = ConfigManager.load()
         self.theme = self.config.get("theme", "dark")
         self.target_os = self.config.get("target_os", "windows")
         self.work_dir = self.config.get("work_dir", self.current_dir)
-        self.exe_path = self.config.get("executable_path", os.path.join(self.work_dir, "gpssh.exe"))
+        self.exe_path = self.config.get("executable_path", "")
+        if not os.path.exists(self.exe_path):
+            exe_name = "gpssh.exe" if sys.platform == "win32" else "gpssh"
+            self.exe_path = get_resource_path(exe_name)
         self.show_line_numbers = self.config.get("show_line_numbers", False)
         self.zoom_level = self.config.get("zoom", 100)
+
+        icon_path = get_resource_path("gpss-studio.ico")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
 
         self.gps_file = os.path.join(self.work_dir, "model.gps")
         self.lis_file = os.path.join(self.work_dir, "model.lis")
@@ -3330,7 +3377,19 @@ class GPSSStudio(QMainWindow):
                 tbl.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
 
 if __name__ == "__main__":
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("sl1dee36.gpssstudio.ide.1.5")
+        except Exception:
+            pass
+
     app = QApplication(sys.argv)
+
+    icon_path = get_resource_path("gpss-studio.ico")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+
     window = GPSSStudio()
     window.show()
     sys.exit(app.exec())
