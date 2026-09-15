@@ -1,13 +1,16 @@
 # Description: Lightweight desktop IDE and simulation runner for Wolverine Software GPSS/H
 # Author: Nazaryan Artem @Sl1dee36
-# Date: 15.09.2026
-# Current version: v1.5.0-indev
+# Date: 16.09.2026
+# Current version: v1.6.0
 # License: MIT
 
 import os
 import re
 import sys
 import json
+import math
+import shutil
+import signal
 import subprocess
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -15,15 +18,18 @@ from PySide6.QtWidgets import (
     QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView,
     QFrame, QSizePolicy, QLineEdit, QInputDialog, QFileDialog,
     QDialog, QFormLayout, QComboBox, QTextEdit, QStatusBar,
-    QCheckBox, QStyledItemDelegate, QStyleOptionViewItem, QStyle
+    QCheckBox, QStyledItemDelegate, QStyleOptionViewItem, QStyle,
+    QGraphicsView, QGraphicsScene, QGraphicsItem, QGraphicsRectItem,
+    QGraphicsPathItem, QGraphicsTextItem, QToolTip
 )
 from PySide6.QtGui import (
     QFont, QFontMetrics, QKeySequence, QShortcut, QColor, 
     QPainter, QPen, QTextCursor, QTextBlockUserData, QDesktopServices,
     QSyntaxHighlighter, QTextCharFormat, QTextDocument, QTextFormat,
-    QIcon
+    QIcon, QPainterPath, QBrush, QLinearGradient, QRadialGradient,
+    QPixmap, QImage, QPolygonF
 )
-from PySide6.QtCore import Qt, QRect, QSize, QUrl, QRegularExpression, Signal, QPoint, QTimer
+from PySide6.QtCore import Qt, QRect, QRectF, QSize, QUrl, QRegularExpression, Signal, QPoint, QPointF, QTimer, QThread
 
 DEFAULT_TEMPLATE = """"""
 
@@ -79,13 +85,33 @@ GPSS_CORE_KEYWORDS = {
     "BVARIABLE", "FVARIABLE", "INITIAL", "TABLE", "QTABLE", "SIMULATE"
 }
 
+def get_monospace_font(size=10, bold=False):
+    font = QFont()
+    font.setFamilies(["Consolas", "DejaVu Sans Mono", "Liberation Mono", "Noto Sans Mono", "Ubuntu Mono", "Courier New", "monospace"])
+    font.setPointSize(size)
+    if bold:
+        font.setBold(True)
+    font.setStyleHint(QFont.Monospace)
+    font.setFixedPitch(True)
+    return font
+
+def get_ui_font(size=9, bold=False, italic=False):
+    font = QFont()
+    font.setFamilies(["Segoe UI", "Ubuntu", "Cantarell", "DejaVu Sans", "Liberation Sans", "Noto Sans", "sans-serif"])
+    font.setPointSize(size)
+    if bold:
+        font.setBold(True)
+    if italic:
+        font.setItalic(True)
+    return font
+
 STYLE_SHEET_DARK = """
 QMainWindow {
     background-color: #121718;
 }
 QWidget {
     color: #e0e5e9;
-    font-family: "Segoe UI", "Roboto", Arial, sans-serif;
+    font-family: "Segoe UI", "Ubuntu", "Cantarell", "DejaVu Sans", "Liberation Sans", Arial, sans-serif;
     font-size: 13px;
 }
 QFrame#top_panel {
@@ -272,12 +298,30 @@ QPushButton#btn_run:pressed {
     background-color: #9ecdfa;
     border: 1px solid #9ecdfa;
 }
+QPushButton#btn_run[running="true"] {
+    background-color: #f85149;
+    color: #ffffff;
+    border: 1px solid #da3633;
+}
+QPushButton#btn_run[running="true"]:hover {
+    background-color: #ff7b72;
+    border: 1px solid #f85149;
+}
+QPushButton#btn_run[running="true"]:pressed {
+    background-color: #b62324;
+    border: 1px solid #b62324;
+}
 QPushButton#btn_reset {
     background-color: #1f2426;
     color: #e0e5e9;
     border: 1px solid #454e4f;
     border-radius: 4px;
     padding: 6px 14px;
+}
+QPushButton#btn_reset:disabled {
+    color: #555e61;
+    background-color: #16191a;
+    border-color: #2b3133;
 }
 QPushButton#btn_reset:hover {
     background-color: #292f30;
@@ -568,6 +612,59 @@ QPushButton#btn_popup_action:hover {
 QPushButton#btn_popup_action:pressed {
     background-color: #1a2228;
 }
+
+QFrame#flowchart_toolbar, QFrame#chart_toolbar {
+    background-color: #1b1f20;
+    border: 1px solid #454e4f;
+    border-radius: 0px;
+}
+QPushButton#btn_flowchart_tool, QPushButton#btn_chart_tool {
+    outline: none;
+    background-color: #1f2426;
+    color: #e0e5e9;
+    border: 1px solid #454e4f;
+    border-radius: 3px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 500;
+}
+QPushButton#btn_flowchart_tool:hover, QPushButton#btn_chart_tool:hover {
+    background-color: #292f30;
+    border-color: #bcdfff;
+    color: #ffffff;
+}
+QPushButton#btn_flowchart_tool:pressed, QPushButton#btn_chart_tool:pressed {
+    background-color: #1a2228;
+}
+QFrame#kpi_card {
+    background-color: #1b1f20;
+    border: 1px solid #454e4f;
+    border-radius: 4px;
+}
+QLabel#kpi_card_title {
+    color: #7a8c9e;
+    font-size: 11px;
+    font-weight: 500;
+}
+QLabel#kpi_card_value {
+    color: #bcdfff;
+    font-size: 15px;
+    font-weight: bold;
+}
+QLabel#kpi_card_sub {
+    color: #7a8c9e;
+    font-size: 10px;
+}
+QFrame#grouping_banner {
+    background-color: #1b1f20;
+    border: 1px solid #454e4f;
+    border-radius: 4px;
+}
+QLabel#grouping_banner_text {
+    color: #bcdfff;
+    font-size: 12px;
+    font-weight: 600;
+}
 """
 
 STYLE_SHEET_LIGHT = """
@@ -576,7 +673,7 @@ QMainWindow {
 }
 QWidget {
     color: #1f2328;
-    font-family: "Segoe UI", "Roboto", Arial, sans-serif;
+    font-family: "Segoe UI", "Ubuntu", "Cantarell", "DejaVu Sans", "Liberation Sans", Arial, sans-serif;
     font-size: 13px;
 }
 QFrame#top_panel {
@@ -763,12 +860,30 @@ QPushButton#btn_run:pressed {
     background-color: #063f82;
     border-color: #063f82;
 }
+QPushButton#btn_run[running="true"] {
+    background-color: #cf222e;
+    color: #ffffff;
+    border: 1px solid #a40e26;
+}
+QPushButton#btn_run[running="true"]:hover {
+    background-color: #e5534b;
+    border-color: #cf222e;
+}
+QPushButton#btn_run[running="true"]:pressed {
+    background-color: #82071e;
+    border-color: #82071e;
+}
 QPushButton#btn_reset {
     background-color: #f6f8fa;
     color: #24292f;
     border: 1px solid #d0d7de;
     border-radius: 4px;
     padding: 6px 14px;
+}
+QPushButton#btn_reset:disabled {
+    color: #8c959f;
+    background-color: #f3f4f6;
+    border-color: #e1e4e8;
 }
 QPushButton#btn_reset:hover {
     background-color: #eaeef2;
@@ -1059,6 +1174,59 @@ QPushButton#btn_popup_action:hover {
 QPushButton#btn_popup_action:pressed {
     background-color: #dadfe5;
 }
+
+QFrame#flowchart_toolbar, QFrame#chart_toolbar {
+    background-color: #f6f8fa;
+    border: 1px solid #d0d7de;
+    border-radius: 0px;
+}
+QPushButton#btn_flowchart_tool, QPushButton#btn_chart_tool {
+    outline: none;
+    background-color: #ffffff;
+    color: #24292f;
+    border: 1px solid #d0d7de;
+    border-radius: 3px;
+    padding: 2px 10px;
+    font-size: 12px;
+    font-weight: 500;
+}
+QPushButton#btn_flowchart_tool:hover, QPushButton#btn_chart_tool:hover {
+    background-color: #f3f4f6;
+    border-color: #0969da;
+    color: #0969da;
+}
+QPushButton#btn_flowchart_tool:pressed, QPushButton#btn_chart_tool:pressed {
+    background-color: #ebecf0;
+}
+QFrame#kpi_card {
+    background-color: #ffffff;
+    border: 1px solid #d0d7de;
+    border-radius: 4px;
+}
+QLabel#kpi_card_title {
+    color: #57606a;
+    font-size: 11px;
+    font-weight: 500;
+}
+QLabel#kpi_card_value {
+    color: #0969da;
+    font-size: 15px;
+    font-weight: bold;
+}
+QLabel#kpi_card_sub {
+    color: #656d76;
+    font-size: 10px;
+}
+QFrame#grouping_banner {
+    background-color: #ffffff;
+    border: 1px solid #d0d7de;
+    border-radius: 4px;
+}
+QLabel#grouping_banner_text {
+    color: #0969da;
+    font-size: 12px;
+    font-weight: 600;
+}
 """
 
 class ConfigManager:
@@ -1099,6 +1267,10 @@ class ConfigManager:
             candidate = get_resource_path(exe_name)
             if os.path.exists(candidate):
                 defaults["executable_path"] = candidate
+            else:
+                which_p = shutil.which(exe_name) or shutil.which("gpssh") or shutil.which("gpssh.exe")
+                if which_p:
+                    defaults["executable_path"] = which_p
 
         # Если рабочая папка не существует, сбрасываем на папку приложения
         if not os.path.exists(defaults.get("work_dir", "")):
@@ -2039,12 +2211,20 @@ class SettingsDialog(QDialog):
         dirname, basename = os.path.split(cur_path)
         if basename in ("gpssh.exe", "gpssh", ""):
             new_name = "gpssh.exe" if chosen_os == "windows" else "gpssh"
-            self.edit_exe.setText(os.path.join(dirname or self.config.get("work_dir", ""), new_name))
+            candidate = os.path.join(dirname or self.config.get("work_dir", ""), new_name)
+            if not os.path.exists(candidate):
+                which_p = shutil.which(new_name)
+                if which_p:
+                    candidate = which_p
+            self.edit_exe.setText(candidate)
 
     def _browse_exe(self):
         cur_os = self.combo_os.currentText().lower()
         start_dir = os.path.dirname(self.edit_exe.text().strip()) or self.config.get("work_dir", "")
-        filter_str = "Исполняемые файлы (*.exe);;Все файлы (*.*)" if cur_os == "windows" else "Все файлы (*.*)"
+        if cur_os == "windows":
+            filter_str = "Исполняемые файлы (*.exe);;Все файлы (*.*)"
+        else:
+            filter_str = "Исполняемые файлы (gpssh * *.exe);;Все файлы (*.*)"
         path, _ = QFileDialog.getOpenFileName(self, "Выбор исполняемого файла GPSS", start_dir, filter_str)
         if path:
             self.edit_exe.setText(os.path.normpath(path))
@@ -2320,6 +2500,1660 @@ class GPSSListingParser:
                             "chi_square": parts[5] if len(parts) > 5 else "N/A"
                         })
 
+BLOCK_COLORS_DARK = {
+    'GENERATE': QColor('#238636'),
+    'TERMINATE': QColor('#da3633'),
+    'QUEUE': QColor('#1f6feb'),
+    'DEPART': QColor('#388bfd'),
+    'SEIZE': QColor('#8957e5'),
+    'RELEASE': QColor('#a371f7'),
+    'PREEMPT': QColor('#8957e5'),
+    'RETURN': QColor('#a371f7'),
+    'ENTER': QColor('#8957e5'),
+    'LEAVE': QColor('#a371f7'),
+    'ADVANCE': QColor('#d29922'),
+    'TRANSFER': QColor('#db61a2'),
+    'TEST': QColor('#f0883e'),
+    'GATE': QColor('#f0883e'),
+    'LOOP': QColor('#f0883e'),
+    'SPLIT': QColor('#db61a2'),
+    'ASSIGN': QColor('#6e7681'),
+    'MARK': QColor('#6e7681'),
+    'PRIORITY': QColor('#6e7681'),
+    'OTHER': QColor('#6e7681')
+}
+
+BLOCK_COLORS_LIGHT = {
+    'GENERATE': QColor('#1a7f37'),
+    'TERMINATE': QColor('#cf222e'),
+    'QUEUE': QColor('#0969da'),
+    'DEPART': QColor('#218bff'),
+    'SEIZE': QColor('#8250df'),
+    'RELEASE': QColor('#a475f9'),
+    'PREEMPT': QColor('#8250df'),
+    'RETURN': QColor('#a475f9'),
+    'ENTER': QColor('#8250df'),
+    'LEAVE': QColor('#a475f9'),
+    'ADVANCE': QColor('#b78103'),
+    'TRANSFER': QColor('#bf3989'),
+    'TEST': QColor('#d47616'),
+    'GATE': QColor('#d47616'),
+    'LOOP': QColor('#d47616'),
+    'SPLIT': QColor('#bf3989'),
+    'ASSIGN': QColor('#57606a'),
+    'MARK': QColor('#57606a'),
+    'PRIORITY': QColor('#57606a'),
+    'OTHER': QColor('#57606a')
+}
+
+class GPSSFlowchartParser:
+    @classmethod
+    def parse(cls, code_text):
+        lines = code_text.splitlines()
+        blocks = []
+        labels = {}
+
+        for idx, line in enumerate(lines):
+            line_no = idx + 1
+            clean = line.strip()
+            if not clean or clean.startswith('*'):
+                continue
+            tokens = clean.split(None, 2)
+            first = tokens[0].upper().rstrip(':')
+            if first in GPSS_CORE_KEYWORDS:
+                label = ''
+                op = first
+                operands = tokens[1] if len(tokens) > 1 else ''
+                comment = tokens[2] if len(tokens) > 2 else ''
+            elif len(tokens) > 1 and tokens[1].upper().rstrip(':') in GPSS_CORE_KEYWORDS:
+                label = tokens[0].rstrip(':')
+                op = tokens[1].upper().rstrip(':')
+                rest = tokens[2] if len(tokens) > 2 else ''
+                op_match = re.match(r'(\S+)(.*)', rest)
+                operands = op_match.group(1) if op_match else ''
+                comment = op_match.group(2).strip() if op_match else ''
+            else:
+                continue
+
+            b_idx = len(blocks)
+            if label:
+                labels[label.upper()] = b_idx
+            blocks.append({
+                'index': b_idx,
+                'block_num': b_idx + 1,
+                'line_no': line_no,
+                'label': label,
+                'op': op,
+                'operands': operands,
+                'comment': comment,
+                'total': '0',
+                'current': '0'
+            })
+
+        edges = []
+        for i, b in enumerate(blocks):
+            op = b['op']
+            raw_ops = [p.strip() for p in b['operands'].split(',')] if b['operands'] else []
+            
+            if op == 'TERMINATE':
+                continue
+            elif op == 'TRANSFER':
+                if len(raw_ops) >= 2 and raw_ops[0] == '':
+                    target = raw_ops[1].upper()
+                    edges.append({
+                        'from': i, 'to': labels.get(target, None),
+                        'target_label': target, 'type': 'jump', 'label': ''
+                    })
+                elif len(raw_ops) >= 2 and re.match(r'^(\d*\.\d+|\d+)$', raw_ops[0]):
+                    prob = float(raw_ops[0])
+                    t1 = raw_ops[1].upper() if raw_ops[1] else ''
+                    t2 = raw_ops[2].upper() if len(raw_ops) > 2 and raw_ops[2] else ''
+                    p1_label = f"{round(prob*100)}%"
+                    p2_label = f"{round((1-prob)*100)}%"
+                    
+                    t1_idx = labels.get(t1, i+1 if not t1 else None)
+                    edges.append({
+                        'from': i, 'to': t1_idx,
+                        'target_label': t1 or 'next', 'type': 'prob', 'label': p1_label
+                    })
+                    if t2:
+                        t2_idx = labels.get(t2, None)
+                        edges.append({
+                            'from': i, 'to': t2_idx,
+                            'target_label': t2, 'type': 'prob', 'label': p2_label
+                        })
+                elif len(raw_ops) >= 2 and raw_ops[0].upper() in ('BOTH', 'ALL'):
+                    for sub_t in raw_ops[1:]:
+                        st = sub_t.upper()
+                        edges.append({
+                            'from': i, 'to': labels.get(st, None),
+                            'target_label': st, 'type': 'both', 'label': raw_ops[0].lower()
+                        })
+                else:
+                    if raw_ops and raw_ops[0].upper() in labels:
+                        st = raw_ops[0].upper()
+                        edges.append({
+                            'from': i, 'to': labels.get(st, None),
+                            'target_label': st, 'type': 'jump', 'label': ''
+                        })
+                    elif i + 1 < len(blocks):
+                        edges.append({
+                            'from': i, 'to': i + 1,
+                            'target_label': '', 'type': 'seq', 'label': ''
+                        })
+            elif op in ('TEST', 'GATE', 'LOOP'):
+                target = raw_ops[-1].upper() if raw_ops else ''
+                if target in labels:
+                    edges.append({
+                        'from': i, 'to': labels[target],
+                        'target_label': target, 'type': 'branch', 'label': 'ветвь'
+                    })
+                if i + 1 < len(blocks):
+                    edges.append({
+                        'from': i, 'to': i + 1,
+                        'target_label': '', 'type': 'seq', 'label': 'далее'
+                    })
+            elif op == 'SPLIT':
+                target = raw_ops[1].upper() if len(raw_ops) > 1 else ''
+                if target in labels:
+                    edges.append({
+                        'from': i, 'to': labels[target],
+                        'target_label': target, 'type': 'split', 'label': 'копия'
+                    })
+                if i + 1 < len(blocks):
+                    edges.append({
+                        'from': i, 'to': i + 1,
+                        'target_label': '', 'type': 'seq', 'label': 'оригинал'
+                    })
+            else:
+                if i + 1 < len(blocks):
+                    edges.append({
+                        'from': i, 'to': i + 1,
+                        'target_label': '', 'type': 'seq', 'label': ''
+                    })
+
+        segments = []
+        current_seg = None
+        for i, b in enumerate(blocks):
+            starts_new = False
+            if b['label']:
+                starts_new = True
+            elif b['op'] == 'GENERATE':
+                starts_new = True
+            elif i > 0 and blocks[i-1]['op'] in ('TERMINATE', 'TRANSFER') and not any(e['from'] == i-1 and e['to'] == i for e in edges):
+                starts_new = True
+
+            if starts_new or current_seg is None:
+                title = b['label'] if b['label'] else (f"Входной поток ({b['op']})" if b['op'] == 'GENERATE' else f"Сегмент #{len(segments)+1}")
+                current_seg = {
+                    'id': len(segments),
+                    'title': title,
+                    'block_indices': []
+                }
+                segments.append(current_seg)
+            current_seg['block_indices'].append(i)
+
+        return blocks, edges, segments, labels
+
+class GPSSBlockGraphicsItem(QGraphicsItem):
+    def __init__(self, block_data, width=210, height=66, theme="dark", show_stats=True, on_click=None):
+        super().__init__()
+        self.block_data = block_data
+        self.w = width
+        self.h = height
+        self.theme = theme
+        self.show_stats = show_stats
+        self.on_click = on_click
+        self.is_hovered = False
+        self.setAcceptHoverEvents(True)
+        self.setZValue(2)
+
+    def boundingRect(self):
+        return QRectF(0, 0, self.w, self.h)
+
+    def paint(self, painter, option, widget=None):
+        painter.setRenderHint(QPainter.Antialiasing)
+        is_dark = (self.theme == "dark")
+        
+        bg_color = QColor("#1b1f20") if is_dark else QColor("#ffffff")
+        border_color = QColor("#bcdfff" if is_dark else "#0969da") if self.is_hovered else (QColor("#454e4f") if is_dark else QColor("#d0d7de"))
+        text_primary = QColor("#e0e5e9") if is_dark else QColor("#1f2328")
+        text_muted = QColor("#7a8c9e") if is_dark else QColor("#57606a")
+        
+        color_palette = BLOCK_COLORS_DARK if is_dark else BLOCK_COLORS_LIGHT
+        op_color = color_palette.get(self.block_data['op'], color_palette['OTHER'])
+        
+        rect = QRectF(0, 0, self.w, self.h)
+        painter.setBrush(QBrush(bg_color))
+        pen_width = 2 if self.is_hovered else 1
+        painter.setPen(QPen(border_color, pen_width))
+        painter.drawRoundedRect(rect, 6, 6)
+        
+        # Category strip
+        strip_rect = QRectF(0, 0, 6, self.h)
+        strip_path = QPainterPath()
+        strip_path.addRoundedRect(strip_rect, 6, 6)
+        painter.fillPath(strip_path, QBrush(op_color))
+        painter.fillRect(QRectF(3, 0, 3, self.h), QBrush(op_color))
+        
+        # Opcode
+        painter.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        painter.setPen(op_color)
+        painter.drawText(QRectF(12, 6, 120, 20), Qt.AlignLeft | Qt.AlignVCenter, self.block_data['op'])
+        
+        # Line number
+        painter.setFont(QFont("Segoe UI", 9))
+        painter.setPen(text_muted)
+        line_str = f"L{self.block_data['line_no']}"
+        painter.drawText(QRectF(self.w - 45, 6, 38, 20), Qt.AlignRight | Qt.AlignVCenter, line_str)
+        
+        # Label badge
+        if self.block_data['label']:
+            lbl_text = f"[{self.block_data['label']}]"
+            painter.setFont(QFont("Consolas", 9, QFont.Bold))
+            painter.setPen(QColor("#7ee787" if is_dark else "#1a7f37"))
+            painter.drawText(QRectF(self.w - 115, 6, 68, 20), Qt.AlignRight | Qt.AlignVCenter, lbl_text)
+            
+        # Operands
+        operands = self.block_data.get('operands', '')
+        if operands:
+            painter.setFont(QFont("Consolas", 10))
+            painter.setPen(text_primary)
+            painter.drawText(QRectF(12, 26, self.w - 24, 18), Qt.AlignLeft | Qt.AlignVCenter, operands)
+            
+        # Statistics / Comment
+        if self.show_stats and (self.block_data.get('total') != '0' or self.block_data.get('current') != '0'):
+            tot_str = f"Входов: {self.block_data.get('total', '0')}"
+            cur_val = int(self.block_data.get('current', '0') or '0')
+            
+            painter.setFont(QFont("Segoe UI", 8))
+            painter.setPen(text_muted)
+            painter.drawText(QRectF(12, 45, 95, 16), Qt.AlignLeft | Qt.AlignVCenter, tot_str)
+            
+            if cur_val > 0:
+                cur_str = f"Занято: {cur_val}"
+                painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+                painter.setPen(QColor("#ffa657" if is_dark else "#b78103"))
+                painter.drawText(QRectF(self.w - 95, 45, 85, 16), Qt.AlignRight | Qt.AlignVCenter, cur_str)
+        elif self.block_data.get('comment'):
+            painter.setFont(QFont("Segoe UI", 8))
+            painter.setPen(text_muted)
+            painter.drawText(QRectF(12, 45, self.w - 24, 16), Qt.AlignLeft | Qt.AlignVCenter, self.block_data['comment'])
+
+    def hoverEnterEvent(self, event):
+        self.is_hovered = True
+        self.update()
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.is_hovered = False
+        self.update()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self.on_click:
+            self.on_click(self.block_data['line_no'])
+        super().mousePressEvent(event)
+
+class GPSSEdgeGraphicsItem(QGraphicsItem):
+    def __init__(self, start_pos, end_pos, edge_type="seq", label="", theme="dark", is_curve=False):
+        super().__init__()
+        self.start_pos = start_pos
+        self.end_pos = end_pos
+        self.edge_type = edge_type
+        self.label = label
+        self.theme = theme
+        self.is_curve = is_curve
+        self.setZValue(1)
+
+    def boundingRect(self):
+        extra = 40
+        min_x = min(self.start_pos.x(), self.end_pos.x()) - extra
+        max_x = max(self.start_pos.x(), self.end_pos.x()) + extra
+        min_y = min(self.start_pos.y(), self.end_pos.y()) - extra
+        max_y = max(self.start_pos.y(), self.end_pos.y()) + extra
+        return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+
+    def paint(self, painter, option, widget=None):
+        painter.setRenderHint(QPainter.Antialiasing)
+        is_dark = (self.theme == "dark")
+        
+        if self.edge_type in ("jump", "prob", "both"):
+            line_color = QColor("#bcdfff" if is_dark else "#0969da")
+            pen_style = Qt.SolidLine
+        elif self.edge_type == "branch":
+            line_color = QColor("#f0883e" if is_dark else "#d47616")
+            pen_style = Qt.DashLine
+        else:
+            line_color = QColor("#7a8c9e" if is_dark else "#8c959f")
+            pen_style = Qt.SolidLine
+            
+        pen = QPen(line_color, 1.5, pen_style)
+        painter.setPen(pen)
+        
+        path = QPainterPath()
+        path.moveTo(self.start_pos)
+        
+        if not self.is_curve:
+            path.lineTo(self.end_pos)
+            mid_pt = QPointF((self.start_pos.x() + self.end_pos.x()) / 2, (self.start_pos.y() + self.end_pos.y()) / 2)
+            angle = math.atan2(self.end_pos.y() - self.start_pos.y(), self.end_pos.x() - self.start_pos.x())
+        else:
+            c1 = QPointF(self.start_pos.x(), self.start_pos.y() + 45)
+            c2 = QPointF(self.end_pos.x(), self.end_pos.y() - 45)
+            path.cubicTo(c1, c2, self.end_pos)
+            mid_pt = path.pointAtPercent(0.5)
+            angle = math.atan2(self.end_pos.y() - c2.y(), self.end_pos.x() - c2.x())
+            
+        painter.drawPath(path)
+        
+        arrow_size = 7
+        p1 = self.end_pos
+        p2 = self.end_pos - QPointF(arrow_size * math.cos(angle - math.pi / 6), arrow_size * math.sin(angle - math.pi / 6))
+        p3 = self.end_pos - QPointF(arrow_size * math.cos(angle + math.pi / 6), arrow_size * math.sin(angle + math.pi / 6))
+        
+        painter.setBrush(QBrush(line_color))
+        painter.drawPolygon(QPolygonF([p1, p2, p3]))
+        
+        if self.label:
+            badge_text = self.label
+            painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            badge_bg = QColor("#1f2426" if is_dark else "#f6f8fa")
+            badge_w = 40
+            badge_h = 16
+            badge_rect = QRectF(mid_pt.x() - badge_w / 2, mid_pt.y() - badge_h / 2, badge_w, badge_h)
+            
+            painter.setBrush(QBrush(badge_bg))
+            painter.setPen(QPen(line_color, 1))
+            painter.drawRoundedRect(badge_rect, 4, 4)
+            painter.setPen(line_color)
+            painter.drawText(badge_rect, Qt.AlignCenter, badge_text)
+
+class GPSSFlowchartView(QGraphicsView):
+    blockClicked = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.scene = QGraphicsScene(self)
+        self.setScene(self.scene)
+        self.setRenderHint(QPainter.Antialiasing)
+        self.setDragMode(QGraphicsView.ScrollHandDrag)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        
+        self.theme = "dark"
+        self.layout_mode = "lanes"
+        self.show_stats = True
+        self.code_text = ""
+        self.listing_stats = {}
+        self.current_zoom = 1.0
+
+    def set_theme(self, theme):
+        self.theme = theme
+        bg = QColor("#121718" if theme == "dark" else "#f6f8fa")
+        self.setBackgroundBrush(QBrush(bg))
+        self.rebuild_flowchart()
+
+    def wheelEvent(self, event):
+        factor = 1.15 if event.angleDelta().y() > 0 else (1.0 / 1.15)
+        new_zoom = self.current_zoom * factor
+        if 0.2 <= new_zoom <= 4.0:
+            self.current_zoom = new_zoom
+            self.scale(factor, factor)
+
+    def zoom_in(self):
+        self.current_zoom *= 1.2
+        self.scale(1.2, 1.2)
+
+    def zoom_out(self):
+        self.current_zoom /= 1.2
+        self.scale(1.0 / 1.2, 1.0 / 1.2)
+
+    def zoom_reset(self):
+        self.resetTransform()
+        self.current_zoom = 1.0
+
+    def zoom_fit(self):
+        self.zoom_reset()
+        rect = self.scene.itemsBoundingRect()
+        if not rect.isEmpty():
+            self.fitInView(rect.adjusted(-20, -20, 20, 20), Qt.KeepAspectRatio)
+
+    def update_model(self, code_text, listing_stats=None):
+        self.code_text = code_text
+        if listing_stats is not None:
+            if hasattr(listing_stats, 'blocks'):
+                stats = {}
+                for b in listing_stats.blocks:
+                    blk = b['block']
+                    cur = b['current']
+                    tot = b['total']
+                    if blk.isdigit():
+                        stats[int(blk)] = {'current': cur, 'total': tot}
+                    else:
+                        stats[blk.upper()] = {'current': cur, 'total': tot}
+                self.listing_stats = stats
+            elif isinstance(listing_stats, dict):
+                self.listing_stats = listing_stats
+        self.rebuild_flowchart()
+
+    def rebuild_flowchart(self):
+        self.scene.clear()
+        if not self.code_text.strip():
+            return
+
+        blocks, edges, segments, labels = GPSSFlowchartParser.parse(self.code_text)
+        if not blocks:
+            return
+
+        for b in blocks:
+            lbl = b['label'].upper() if b['label'] else ''
+            b_num = b['block_num']
+            stat = self.listing_stats.get(lbl) or self.listing_stats.get(b_num)
+            if stat:
+                b['total'] = stat.get('total', '0')
+                b['current'] = stat.get('current', '0')
+
+        block_w = 210
+        block_h = 66
+        v_gap = 26
+        h_gap = 60
+
+        block_items = {}
+        block_positions = {}
+
+        if self.layout_mode == "lanes":
+            num_segs = len(segments)
+            cols = min(4, max(1, num_segs))
+            col_x_offsets = []
+            cur_x = 30
+            for c in range(cols):
+                col_x_offsets.append(cur_x)
+                cur_x += block_w + h_gap
+
+            lane_positions = {}
+            for s_idx, seg in enumerate(segments):
+                c = s_idx % cols
+                r_lane = s_idx // cols
+                lane_positions[seg['id']] = (c, r_lane)
+
+            row_y_starts = [40]
+            for r in range(math.ceil(num_segs / cols)):
+                max_in_row = 0
+                for c in range(cols):
+                    s_id = r * cols + c
+                    if s_id < num_segs:
+                        max_in_row = max(max_in_row, len(segments[s_id]['block_indices']))
+                seg_h = 30 + max_in_row * (block_h + v_gap) + 50
+                row_y_starts.append(row_y_starts[-1] + seg_h)
+
+            for seg in segments:
+                c, r_lane = lane_positions[seg['id']]
+                bx = col_x_offsets[c]
+                by = row_y_starts[r_lane]
+
+                title_item = QGraphicsRectItem(bx, by, block_w, 24)
+                is_dark = (self.theme == "dark")
+                title_item.setBrush(QBrush(QColor("#1f2426" if is_dark else "#eef3f8")))
+                title_item.setPen(QPen(QColor("#454e4f" if is_dark else "#d0d7de"), 1))
+                self.scene.addItem(title_item)
+
+                txt_item = QGraphicsTextItem(seg['title'], title_item)
+                txt_item.setFont(QFont("Segoe UI", 9, QFont.Bold))
+                txt_item.setDefaultTextColor(QColor("#bcdfff" if is_dark else "#0969da"))
+                txt_item.setPos(bx + 6, by + 1)
+
+                by += 32
+
+                for b_idx in seg['block_indices']:
+                    b = blocks[b_idx]
+                    item = GPSSBlockGraphicsItem(
+                        b, width=block_w, height=block_h, theme=self.theme,
+                        show_stats=self.show_stats, on_click=self.blockClicked.emit
+                    )
+                    item.setPos(bx, by)
+                    self.scene.addItem(item)
+                    block_items[b_idx] = item
+                    block_positions[b_idx] = (bx, by, c)
+                    by += block_h + v_gap
+
+        else:
+            bx = 100
+            by = 40
+            for b_idx, b in enumerate(blocks):
+                item = GPSSBlockGraphicsItem(
+                    b, width=block_w, height=block_h, theme=self.theme,
+                    show_stats=self.show_stats, on_click=self.blockClicked.emit
+                )
+                item.setPos(bx, by)
+                self.scene.addItem(item)
+                block_items[b_idx] = item
+                block_positions[b_idx] = (bx, by, 0)
+                by += block_h + v_gap
+
+        for e in edges:
+            u, v = e['from'], e['to']
+            if u not in block_positions or v not in block_positions:
+                continue
+
+            ux, uy, uc = block_positions[u]
+            vx, vy, vc = block_positions[v]
+
+            start_pos = QPointF(ux + block_w / 2, uy + block_h)
+            end_pos = QPointF(vx + block_w / 2, vy)
+
+            is_curve = (uc != vc) or (abs(v - u) > 1) or (vy <= uy)
+
+            edge_item = GPSSEdgeGraphicsItem(
+                start_pos, end_pos, edge_type=e['type'],
+                label=e['label'], theme=self.theme, is_curve=is_curve
+            )
+            self.scene.addItem(edge_item)
+
+        self.scene.setSceneRect(self.scene.itemsBoundingRect().adjusted(-50, -50, 50, 50))
+
+    def copy_to_clipboard(self):
+        pixmap = self.render_to_pixmap()
+        if pixmap:
+            QApplication.clipboard().setPixmap(pixmap)
+            return True
+        return False
+
+    def export_png(self, parent):
+        path, _ = QFileDialog.getSaveFileName(
+            parent, "Экспорт блок-схемы в PNG", "", "Изображение PNG (*.png)"
+        )
+        if not path:
+            return False
+        pixmap = self.render_to_pixmap()
+        if pixmap:
+            return pixmap.save(path, "PNG")
+        return False
+
+    def render_to_pixmap(self):
+        rect = self.scene.itemsBoundingRect().adjusted(-30, -30, 30, 30)
+        if rect.isEmpty():
+            return None
+        img = QImage(int(rect.width()), int(rect.height()), QImage.Format_ARGB32)
+        img.fill(QColor("#121718" if self.theme == "dark" else "#f6f8fa"))
+        p = QPainter(img)
+        p.setRenderHint(QPainter.Antialiasing)
+        self.scene.render(p, QRectF(0, 0, rect.width(), rect.height()), rect)
+        p.end()
+        return QPixmap.fromImage(img)
+
+class GPSSFlowchartWidget(QWidget):
+    blockClicked = Signal(int)
+    refreshRequested = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.theme = "dark"
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.toolbar = QFrame()
+        self.toolbar.setObjectName("flowchart_toolbar")
+        self.toolbar.setFixedHeight(36)
+        tb_layout = QHBoxLayout(self.toolbar)
+        tb_layout.setContentsMargins(8, 4, 8, 4)
+        tb_layout.setSpacing(8)
+
+        self.btn_zoom_in = QPushButton("+")
+        self.btn_zoom_in.setObjectName("btn_flowchart_tool")
+        self.btn_zoom_in.setFixedSize(28, 28)
+        self.btn_zoom_in.setToolTip("Увеличить (Ctrl + колесо мыши)")
+        self.btn_zoom_in.setFocusPolicy(Qt.NoFocus)
+
+        self.btn_zoom_out = QPushButton("-")
+        self.btn_zoom_out.setObjectName("btn_flowchart_tool")
+        self.btn_zoom_out.setFixedSize(28, 28)
+        self.btn_zoom_out.setToolTip("Уменьшить (Ctrl + колесо мыши)")
+        self.btn_zoom_out.setFocusPolicy(Qt.NoFocus)
+
+        self.btn_zoom_reset = QPushButton("100%")
+        self.btn_zoom_reset.setObjectName("btn_flowchart_tool")
+        self.btn_zoom_reset.setFixedHeight(28)
+        self.btn_zoom_reset.setToolTip("Сбросить масштаб")
+        self.btn_zoom_reset.setFocusPolicy(Qt.NoFocus)
+
+        self.btn_zoom_fit = QPushButton("Вписать")
+        self.btn_zoom_fit.setObjectName("btn_flowchart_tool")
+        self.btn_zoom_fit.setFixedHeight(28)
+        self.btn_zoom_fit.setToolTip("Вписать схему в окно")
+        self.btn_zoom_fit.setFocusPolicy(Qt.NoFocus)
+
+        self.combo_mode = QComboBox()
+        self.combo_mode.setObjectName("flowchart_mode_combo")
+        self.combo_mode.setFixedHeight(28)
+        self.combo_mode.addItems(["Колонки (подсистемы)", "Вертикальный поток"])
+        self.combo_mode.setFocusPolicy(Qt.NoFocus)
+
+        self.chk_stats = QCheckBox("Счётчики симуляции")
+        self.chk_stats.setChecked(True)
+        self.chk_stats.setFocusPolicy(Qt.NoFocus)
+
+        self.btn_refresh = QPushButton("Обновить схему")
+        self.btn_refresh.setObjectName("btn_flowchart_tool")
+        self.btn_refresh.setFixedHeight(28)
+        self.btn_refresh.setFocusPolicy(Qt.NoFocus)
+
+        self.btn_copy = QPushButton("Копировать")
+        self.btn_copy.setObjectName("btn_flowchart_tool")
+        self.btn_copy.setFixedHeight(28)
+        self.btn_copy.setToolTip("Скопировать изображение блок-схемы в буфер обмена")
+        self.btn_copy.setFocusPolicy(Qt.NoFocus)
+
+        self.btn_save = QPushButton("Экспорт PNG...")
+        self.btn_save.setObjectName("btn_flowchart_tool")
+        self.btn_save.setFixedHeight(28)
+        self.btn_save.setFocusPolicy(Qt.NoFocus)
+
+        tb_layout.addWidget(self.btn_zoom_in)
+        tb_layout.addWidget(self.btn_zoom_out)
+        tb_layout.addWidget(self.btn_zoom_reset)
+        tb_layout.addWidget(self.btn_zoom_fit)
+        tb_layout.addWidget(self.combo_mode)
+        tb_layout.addWidget(self.chk_stats)
+        tb_layout.addStretch()
+        tb_layout.addWidget(self.btn_refresh)
+        tb_layout.addWidget(self.btn_copy)
+        tb_layout.addWidget(self.btn_save)
+
+        layout.addWidget(self.toolbar)
+
+        self.view = GPSSFlowchartView(self)
+        self.view.blockClicked.connect(self.blockClicked.emit)
+        layout.addWidget(self.view, 1)
+
+        self.btn_zoom_in.clicked.connect(self.view.zoom_in)
+        self.btn_zoom_out.clicked.connect(self.view.zoom_out)
+        self.btn_zoom_reset.clicked.connect(self.view.zoom_reset)
+        self.btn_zoom_fit.clicked.connect(self.view.zoom_fit)
+        self.combo_mode.currentIndexChanged.connect(self._on_mode_changed)
+        self.chk_stats.toggled.connect(self._on_stats_toggled)
+        self.btn_refresh.clicked.connect(self.refreshRequested.emit)
+        self.btn_copy.clicked.connect(self._copy_diagram)
+        self.btn_save.clicked.connect(lambda: self.view.export_png(self))
+
+    def _on_mode_changed(self, idx):
+        self.view.layout_mode = "lanes" if idx == 0 else "vertical"
+        self.view.rebuild_flowchart()
+
+    def _on_stats_toggled(self, checked):
+        self.view.show_stats = checked
+        self.view.rebuild_flowchart()
+
+    def _copy_diagram(self):
+        if self.view.copy_to_clipboard():
+            QMessageBox.information(self, "Копирование", "Изображение блок-схемы успешно скопировано в буфер обмена.")
+        else:
+            QMessageBox.warning(self, "Копирование", "Схема пуста или не может быть скопирована.")
+
+    def set_theme(self, theme):
+        self.theme = theme
+        self.view.set_theme(theme)
+
+    def update_model(self, code_text, listing_stats=None):
+        self.view.update_model(code_text, listing_stats)
+
+    def update_stats(self, parser):
+        if not parser or not parser.blocks:
+            return
+        stats = {}
+        for b in parser.blocks:
+            blk = b['block']
+            cur = b['current']
+            tot = b['total']
+            if blk.isdigit():
+                stats[int(blk)] = {'current': cur, 'total': tot}
+            else:
+                stats[blk.upper()] = {'current': cur, 'total': tot}
+        self.view.listing_stats = stats
+        self.view.rebuild_flowchart()
+
+def analyze_device_grouping(parser, code_text):
+    if not parser:
+        return [], {}
+
+    q_map = {}
+    lines = [l.strip() for l in code_text.splitlines() if l.strip() and not l.strip().startswith('*')]
+    for i, line in enumerate(lines):
+        m_q = re.search(r'\bQUEUE\s+([A-Za-z0-9_$#]+)', line, re.IGNORECASE)
+        if m_q:
+            q_name = m_q.group(1).upper()
+            for j in range(i+1, min(i+6, len(lines))):
+                m_s = re.search(r'\b(SEIZE|ENTER)\s+([A-Za-z0-9_$#]+)', lines[j], re.IGNORECASE)
+                if m_s:
+                    dev_name = m_s.group(2).upper()
+                    q_map[dev_name] = q_name
+                    break
+
+    queues_by_name = {q['name'].upper(): q for q in parser.queues}
+
+    grouped_devices = []
+    utils_list = []
+    total_entries_count = 0
+
+    for f in parser.facilities:
+        fn = f['name'].upper()
+        qn = q_map.get(fn, '')
+        if not qn:
+            for k in queues_by_name:
+                if k.endswith(fn) or fn.endswith(k) or (re.sub(r'\D', '', k) == re.sub(r'\D', '', fn) and re.sub(r'\D', '', fn)):
+                    qn = k
+                    break
+        q_info = queues_by_name.get(qn, {})
+
+        try:
+            t_serv = float(f['avg_time'])
+        except Exception:
+            t_serv = 0.0
+        try:
+            t_wait = float(q_info.get('avg_t', 0.0))
+        except Exception:
+            t_wait = 0.0
+        t_total = t_serv + t_wait
+
+        try:
+            u_val = float(f['util'])
+            utils_list.append((f['name'], u_val))
+        except Exception:
+            u_val = 0.0
+
+        try:
+            e_cnt = int(f['entries'])
+            total_entries_count += e_cnt
+        except Exception:
+            pass
+
+        pct_z = q_info.get('pct_z', '')
+        grouped_devices.append({
+            'device': f['name'],
+            'type': 'Одноканальный',
+            'util': f['util'],
+            'util_val': u_val,
+            'entries': f['entries'],
+            'avg_serv': f['avg_time'],
+            'avg_serv_val': t_serv,
+            'queue': qn or '-',
+            'q_avg_len': q_info.get('avg_c', '-'),
+            'q_max_len': q_info.get('max_c', '-'),
+            'q_avg_wait': q_info.get('avg_t', '-'),
+            'q_avg_wait_val': t_wait,
+            'q_zero_pct': f"{pct_z}%" if pct_z else '-',
+            'total_node_time': f"{t_total:.3f}" if q_info else f['avg_time'],
+            'total_node_val': t_total if q_info else t_serv,
+            'status': f['status'],
+            'line_no': f['line_no'],
+            'q_line_no': q_info.get('line_no', f['line_no'])
+        })
+
+    for s in parser.storages:
+        sn = s['name'].upper()
+        qn = q_map.get(sn, '')
+        q_info = queues_by_name.get(qn, {})
+
+        try:
+            t_serv = float(s['avg_time'])
+        except Exception:
+            t_serv = 0.0
+        try:
+            t_wait = float(q_info.get('avg_t', 0.0))
+        except Exception:
+            t_wait = 0.0
+        t_total = t_serv + t_wait
+
+        try:
+            u_val = float(s['util'])
+            utils_list.append((s['name'], u_val))
+        except Exception:
+            u_val = 0.0
+
+        pct_z = q_info.get('pct_z', '')
+        grouped_devices.append({
+            'device': s['name'],
+            'type': 'Многоканальный',
+            'util': s['util'],
+            'util_val': u_val,
+            'entries': s['entries'],
+            'avg_serv': s['avg_time'],
+            'avg_serv_val': t_serv,
+            'queue': qn or '-',
+            'q_avg_len': q_info.get('avg_c', '-'),
+            'q_max_len': q_info.get('max_c', '-'),
+            'q_avg_wait': q_info.get('avg_t', '-'),
+            'q_avg_wait_val': t_wait,
+            'q_zero_pct': f"{pct_z}%" if pct_z else '-',
+            'total_node_time': f"{t_total:.3f}" if q_info else s['avg_time'],
+            'total_node_val': t_total if q_info else t_serv,
+            'status': s['status'],
+            'line_no': s['line_no'],
+            'q_line_no': q_info.get('line_no', s['line_no'])
+        })
+
+    mean_u = sum(u for _, u in utils_list) / len(utils_list) if utils_list else 0.0
+    bottleneck_dev, max_u = max(utils_list, key=lambda x: x[1]) if utils_list else ("-", 0.0)
+
+    worst_q = "-"
+    max_q_val = 0.0
+    for q in parser.queues:
+        try:
+            v = float(q['max_c'])
+            if v > max_q_val:
+                max_q_val = v
+                worst_q = q['name']
+        except Exception:
+            pass
+
+    summary = {
+        'total_devices': len(grouped_devices),
+        'mean_util': mean_u,
+        'bottleneck_device': bottleneck_dev,
+        'bottleneck_util': max_u,
+        'worst_queue': worst_q,
+        'max_q_len': max_q_val,
+        'total_entries': total_entries_count
+    }
+
+    return grouped_devices, summary
+
+class PerformanceChartView(QWidget):
+    itemClicked = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.theme = "dark"
+        self.chart_type = 0
+        self.parser = None
+        self.device_groups = []
+        self.hovered_item = None
+        self.hover_pos = QPointF(0, 0)
+        self.hit_boxes = []
+        self.setMouseTracking(True)
+        self.setMinimumHeight(340)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+    def set_theme(self, theme):
+        self.theme = theme
+        self.update()
+
+    def set_chart_type(self, idx):
+        self.chart_type = idx
+        self.hovered_item = None
+        self.update()
+
+    def set_data(self, parser, device_groups, theme=None):
+        self.parser = parser
+        self.device_groups = device_groups
+        if theme:
+            self.theme = theme
+        self.hovered_item = None
+        self.update()
+
+    def clear(self):
+        self.parser = None
+        self.device_groups = []
+        self.hovered_item = None
+        self.update()
+
+    def mouseMoveEvent(self, event):
+        pos = event.position()
+        found = False
+        for rect, item in self.hit_boxes:
+            if rect.contains(pos):
+                self.hovered_item = item
+                self.hover_pos = pos
+                self.setCursor(Qt.PointingHandCursor if item.get('line_no') else Qt.ArrowCursor)
+                self.update()
+                found = True
+                break
+        if not found and self.hovered_item is not None:
+            self.hovered_item = None
+            self.setCursor(Qt.ArrowCursor)
+            self.update()
+        super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and self.hovered_item and self.hovered_item.get('line_no'):
+            self.itemClicked.emit(self.hovered_item['line_no'])
+        super().mousePressEvent(event)
+
+    def render_to_pixmap(self):
+        pixmap = QPixmap(self.size())
+        pixmap.fill(QColor("#121718" if self.theme == "dark" else "#ffffff"))
+        p = QPainter(pixmap)
+        p.setRenderHint(QPainter.Antialiasing)
+        self._paint_content(p, self.width(), self.height(), is_export=True)
+        p.end()
+        return pixmap
+
+    def copy_to_clipboard(self):
+        pixmap = self.render_to_pixmap()
+        if pixmap:
+            QApplication.clipboard().setPixmap(pixmap)
+            return True
+        return False
+
+    def export_png(self, parent):
+        path, _ = QFileDialog.getSaveFileName(
+            parent, "Экспорт графика в PNG", "", "Изображение PNG (*.png)"
+        )
+        if not path:
+            return False
+        pixmap = self.render_to_pixmap()
+        if pixmap:
+            return pixmap.save(path, "PNG")
+        return False
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        self._paint_content(p, self.width(), self.height(), is_export=False)
+        p.end()
+
+    def _paint_content(self, p, w, h, is_export=False):
+        is_dark = (self.theme == "dark")
+        bg_color = QColor("#121718" if is_dark else "#ffffff")
+        p.fillRect(0, 0, w, h, bg_color)
+
+        text_primary = QColor("#e0e5e9" if is_dark else "#1f2328")
+        text_muted = QColor("#7a8c9e" if is_dark else "#57606a")
+        grid_color = QColor("#292f30" if is_dark else "#eaeef2")
+        border_color = QColor("#454e4f" if is_dark else "#d0d7de")
+        accent_color = QColor("#bcdfff" if is_dark else "#0969da")
+
+        if not is_export:
+            self.hit_boxes = []
+
+        if not self.parser or not (self.parser.facilities or self.parser.queues or self.parser.blocks):
+            p.setPen(text_muted)
+            p.setFont(QFont("Segoe UI", 13))
+            p.drawText(QRectF(0, 0, w, h), Qt.AlignCenter, "Нет данных моделирования.\nЗапустите модель (F5), чтобы построить графики.")
+            return
+
+        titles = [
+            "Коэффициенты загрузки устройств (Facility Utilization)",
+            "Характеристики очередей: средняя и максимальная длина",
+            "Среднее время ожидания в очередях (Avg Wait Time)",
+            "Доля заявок с нулевым временем ожидания (% Zeros)",
+            "Структура задержки в узлах: время в очереди vs время обслуживания",
+            "Интенсивность блоков модели: общее число транзактов",
+            "Многоканальные устройства (Storage Utilization & Capacity)"
+        ]
+        title_text = titles[min(self.chart_type, len(titles)-1)]
+
+        p.setFont(QFont("Segoe UI", 12, QFont.Bold))
+        p.setPen(accent_color)
+        p.drawText(QRectF(30, 15, w - 60, 26), Qt.AlignLeft | Qt.AlignVCenter, title_text)
+
+        m_l, m_r, m_t, m_b = 65, 40, 60, 60
+        pw = w - m_l - m_r
+        ph = h - m_t - m_b
+        if pw <= 40 or ph <= 40:
+            return
+
+        p.setPen(QPen(border_color, 1))
+        p.drawLine(m_l, m_t + ph, m_l + pw, m_t + ph)
+        p.drawLine(m_l, m_t, m_l, m_t + ph)
+
+        if self.chart_type == 0:
+            self._draw_facility_util(p, m_l, m_t, pw, ph, is_dark, text_primary, text_muted, grid_color)
+        elif self.chart_type == 1:
+            self._draw_queue_lengths(p, m_l, m_t, pw, ph, is_dark, text_primary, text_muted, grid_color)
+        elif self.chart_type == 2:
+            self._draw_queue_wait_times(p, m_l, m_t, pw, ph, is_dark, text_primary, text_muted, grid_color)
+        elif self.chart_type == 3:
+            self._draw_queue_zeros(p, m_l, m_t, pw, ph, is_dark, text_primary, text_muted, grid_color)
+        elif self.chart_type == 4:
+            self._draw_node_composition(p, m_l, m_t, pw, ph, is_dark, text_primary, text_muted, grid_color)
+        elif self.chart_type == 5:
+            self._draw_block_executions(p, m_l, m_t, pw, ph, is_dark, text_primary, text_muted, grid_color)
+        elif self.chart_type == 6:
+            self._draw_storage_stats(p, m_l, m_t, pw, ph, is_dark, text_primary, text_muted, grid_color)
+
+        if not is_export and self.hovered_item:
+            self._draw_tooltip(p, w, h, is_dark)
+
+    def _draw_facility_util(self, p, ml, mt, pw, ph, is_dark, text_primary, text_muted, grid_color):
+        facs = self.parser.facilities
+        if not facs:
+            p.drawText(QRectF(ml, mt, pw, ph), Qt.AlignCenter, "Нет данных об одноканальных устройствах")
+            return
+
+        for step in (0.0, 0.25, 0.5, 0.75, 1.0):
+            y = mt + ph - step * ph
+            p.setPen(QPen(grid_color, 1, Qt.DashLine))
+            p.drawLine(ml, y, ml + pw, y)
+            p.setPen(text_muted)
+            p.setFont(QFont("Segoe UI", 8))
+            p.drawText(QRectF(ml - 55, y - 9, 48, 18), Qt.AlignRight | Qt.AlignVCenter, f"{round(step*100)}%")
+
+        y_80 = mt + ph - 0.8 * ph
+        p.setPen(QPen(QColor("#ff7b72" if is_dark else "#cf222e"), 1, Qt.DotLine))
+        p.drawLine(ml, y_80, ml + pw, y_80)
+        p.setFont(QFont("Segoe UI", 8, QFont.Bold))
+        p.drawText(QRectF(ml + pw - 150, y_80 - 18, 145, 16), Qt.AlignRight, "80% (Порог перегрузки)")
+
+        n = len(facs)
+        slot_w = pw / n
+        bar_w = min(48.0, max(18.0, slot_w * 0.65))
+
+        for i, f in enumerate(facs):
+            try:
+                val = float(f['util'])
+            except Exception:
+                val = 0.0
+
+            bx = ml + i * slot_w + (slot_w - bar_w) / 2
+            bh = min(val, 1.0) * ph
+            by = mt + ph - bh
+
+            if val >= 0.90:
+                color = QColor("#f85149" if is_dark else "#cf222e")
+            elif val >= 0.70:
+                color = QColor("#d29922" if is_dark else "#b78103")
+            else:
+                color = QColor("#388bfd" if is_dark else "#0969da")
+
+            bar_rect = QRectF(bx, by, bar_w, bh)
+            p.setBrush(QBrush(color))
+            p.setPen(Qt.NoPen)
+            p.drawRoundedRect(bar_rect, 4, 4)
+
+            p.setPen(text_primary)
+            p.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            p.drawText(QRectF(bx - 15, by - 20, bar_w + 30, 18), Qt.AlignCenter, f"{round(val*100, 1)}%")
+
+            p.drawText(QRectF(bx - 15, mt + ph + 6, bar_w + 30, 18), Qt.AlignCenter, f['name'])
+
+            p.setFont(QFont("Segoe UI", 8))
+            p.setPen(text_muted)
+            p.drawText(QRectF(bx - 20, mt + ph + 24, bar_w + 40, 16), Qt.AlignCenter, f"{f['entries']} вх.")
+
+            self.hit_boxes.append((
+                QRectF(bx, mt, bar_w, ph + 45),
+                {
+                    'title': f"Прибор: {f['name']}",
+                    'lines': [
+                        f"Загрузка (Util): {round(val*100, 2)}%",
+                        f"Входов (Entries): {f['entries']}",
+                        f"Ср. время обслуж.: {f['avg_time']}",
+                        f"Статус: {f['status']}"
+                    ],
+                    'line_no': f['line_no']
+                }
+            ))
+
+    def _draw_queue_lengths(self, p, ml, mt, pw, ph, is_dark, text_primary, text_muted, grid_color):
+        qs = self.parser.queues
+        if not qs:
+            p.drawText(QRectF(ml, mt, pw, ph), Qt.AlignCenter, "Нет данных об очередях")
+            return
+
+        max_val = max(1.0, max(float(q['max_c'] or 0) for q in qs))
+        y_max = math.ceil(max_val * 1.25)
+
+        for step_i in range(5):
+            val = (y_max / 4) * step_i
+            y = mt + ph - (val / y_max) * ph
+            p.setPen(QPen(grid_color, 1, Qt.DashLine))
+            p.drawLine(ml, y, ml + pw, y)
+            p.setPen(text_muted)
+            p.setFont(QFont("Segoe UI", 8))
+            p.drawText(QRectF(ml - 55, y - 9, 48, 18), Qt.AlignRight | Qt.AlignVCenter, f"{val:.1f}")
+
+        leg_x = ml + pw - 280
+        p.fillRect(QRectF(leg_x, mt - 30, 12, 12), QColor("#388bfd" if is_dark else "#0969da"))
+        p.setPen(text_primary)
+        p.setFont(QFont("Segoe UI", 9))
+        p.drawText(QRectF(leg_x + 18, mt - 32, 110, 16), Qt.AlignLeft | Qt.AlignVCenter, "Ср. длина")
+
+        p.fillRect(QRectF(leg_x + 140, mt - 30, 12, 12), QColor("#f0883e" if is_dark else "#d47616"))
+        p.drawText(QRectF(leg_x + 158, mt - 32, 120, 16), Qt.AlignLeft | Qt.AlignVCenter, "Макс. длина")
+
+        n = len(qs)
+        slot_w = pw / n
+        single_bw = min(22.0, max(10.0, slot_w * 0.35))
+
+        for i, q in enumerate(qs):
+            avg_v = float(q['avg_c'] or 0)
+            max_v = float(q['max_c'] or 0)
+
+            center_x = ml + i * slot_w + slot_w / 2
+            bx1 = center_x - single_bw - 2
+            bx2 = center_x + 2
+
+            bh1 = (avg_v / y_max) * ph
+            bh2 = (max_v / y_max) * ph
+
+            p.setBrush(QBrush(QColor("#388bfd" if is_dark else "#0969da")))
+            p.setPen(Qt.NoPen)
+            p.drawRoundedRect(QRectF(bx1, mt + ph - bh1, single_bw, bh1), 3, 3)
+
+            p.setBrush(QBrush(QColor("#f0883e" if is_dark else "#d47616")))
+            p.drawRoundedRect(QRectF(bx2, mt + ph - bh2, single_bw, bh2), 3, 3)
+
+            p.setPen(text_primary)
+            p.setFont(QFont("Segoe UI", 8))
+            p.drawText(QRectF(bx1 - 6, mt + ph - bh1 - 18, single_bw + 12, 16), Qt.AlignCenter, f"{avg_v:.1f}")
+            p.drawText(QRectF(bx2 - 6, mt + ph - bh2 - 18, single_bw + 12, 16), Qt.AlignCenter, str(round(max_v)))
+
+            p.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            p.drawText(QRectF(center_x - 30, mt + ph + 6, 60, 18), Qt.AlignCenter, q['name'])
+
+            self.hit_boxes.append((
+                QRectF(bx1 - 4, mt, single_bw * 2 + 12, ph + 30),
+                {
+                    'title': f"Очередь: {q['name']}",
+                    'lines': [
+                        f"Средняя длина: {q['avg_c']}",
+                        f"Максимальная длина: {q['max_c']}",
+                        f"Всего заявок: {q['total_e']}",
+                        f"Ср. время ожидания: {q['avg_t']}",
+                        f"Без ожидания: {q['pct_z']}%"
+                    ],
+                    'line_no': q['line_no']
+                }
+            ))
+
+    def _draw_queue_wait_times(self, p, ml, mt, pw, ph, is_dark, text_primary, text_muted, grid_color):
+        qs = self.parser.queues
+        if not qs:
+            return
+
+        max_val = max(1.0, max(float(q['avg_t'] or 0) for q in qs))
+        y_max = max_val * 1.2
+
+        for step_i in range(5):
+            val = (y_max / 4) * step_i
+            y = mt + ph - (val / y_max) * ph
+            p.setPen(QPen(grid_color, 1, Qt.DashLine))
+            p.drawLine(ml, y, ml + pw, y)
+            p.setPen(text_muted)
+            p.setFont(QFont("Segoe UI", 8))
+            p.drawText(QRectF(ml - 55, y - 9, 48, 18), Qt.AlignRight | Qt.AlignVCenter, f"{val:.1f}с")
+
+        n = len(qs)
+        slot_w = pw / n
+        bar_w = min(46.0, max(18.0, slot_w * 0.6))
+
+        for i, q in enumerate(qs):
+            v = float(q['avg_t'] or 0)
+            bx = ml + i * slot_w + (slot_w - bar_w) / 2
+            bh = (v / y_max) * ph
+            by = mt + ph - bh
+
+            color = QColor("#d29922" if v > 10 else ("#388bfd" if is_dark else "#0969da"))
+            p.setBrush(QBrush(color))
+            p.setPen(Qt.NoPen)
+            p.drawRoundedRect(QRectF(bx, by, bar_w, bh), 4, 4)
+
+            p.setPen(text_primary)
+            p.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            p.drawText(QRectF(bx - 15, by - 20, bar_w + 30, 18), Qt.AlignCenter, f"{v:.1f}с")
+
+            p.drawText(QRectF(bx - 15, mt + ph + 6, bar_w + 30, 18), Qt.AlignCenter, q['name'])
+
+            self.hit_boxes.append((
+                QRectF(bx, mt, bar_w, ph + 30),
+                {
+                    'title': f"Очередь: {q['name']}",
+                    'lines': [
+                        f"Ср. время ожидания: {q['avg_t']} тактов",
+                        f"$Ср. время (ненулевые): {q['dollar_avg_t']}",
+                        f"Всего входов: {q['total_e']}",
+                        f"Нулевых входов: {q['zero_e']}"
+                    ],
+                    'line_no': q['line_no']
+                }
+            ))
+
+    def _draw_queue_zeros(self, p, ml, mt, pw, ph, is_dark, text_primary, text_muted, grid_color):
+        qs = self.parser.queues
+        if not qs:
+            return
+
+        for step in (0.0, 0.25, 0.5, 0.75, 1.0):
+            y = mt + ph - step * ph
+            p.setPen(QPen(grid_color, 1, Qt.DashLine))
+            p.drawLine(ml, y, ml + pw, y)
+            p.setPen(text_muted)
+            p.setFont(QFont("Segoe UI", 8))
+            p.drawText(QRectF(ml - 55, y - 9, 48, 18), Qt.AlignRight | Qt.AlignVCenter, f"{round(step*100)}%")
+
+        n = len(qs)
+        slot_w = pw / n
+        bar_w = min(46.0, max(18.0, slot_w * 0.6))
+
+        for i, q in enumerate(qs):
+            try:
+                v = float(q['pct_z'] or 0)
+            except Exception:
+                v = 0.0
+
+            bx = ml + i * slot_w + (slot_w - bar_w) / 2
+            bh = (v / 100.0) * ph
+            by = mt + ph - bh
+
+            if v >= 70:
+                color = QColor("#238636" if is_dark else "#1a7f37")
+            elif v >= 30:
+                color = QColor("#d29922" if is_dark else "#b78103")
+            else:
+                color = QColor("#da3633" if is_dark else "#cf222e")
+
+            p.setBrush(QBrush(color))
+            p.setPen(Qt.NoPen)
+            p.drawRoundedRect(QRectF(bx, by, bar_w, bh), 4, 4)
+
+            p.setPen(text_primary)
+            p.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            p.drawText(QRectF(bx - 15, by - 20, bar_w + 30, 18), Qt.AlignCenter, f"{round(v, 1)}%")
+
+            p.drawText(QRectF(bx - 15, mt + ph + 6, bar_w + 30, 18), Qt.AlignCenter, q['name'])
+
+            self.hit_boxes.append((
+                QRectF(bx, mt, bar_w, ph + 30),
+                {
+                    'title': f"Очередь: {q['name']}",
+                    'lines': [
+                        f"Доля без ожидания: {q['pct_z']}%",
+                        f"Нулевых заявок: {q['zero_e']}",
+                        f"Всего заявок: {q['total_e']}"
+                    ],
+                    'line_no': q['line_no']
+                }
+            ))
+
+    def _draw_node_composition(self, p, ml, mt, pw, ph, is_dark, text_primary, text_muted, grid_color):
+        nodes = self.device_groups
+        if not nodes:
+            return
+
+        max_val = max(1.0, max(n['total_node_val'] for n in nodes))
+        y_max = max_val * 1.25
+
+        for step_i in range(5):
+            val = (y_max / 4) * step_i
+            y = mt + ph - (val / y_max) * ph
+            p.setPen(QPen(grid_color, 1, Qt.DashLine))
+            p.drawLine(ml, y, ml + pw, y)
+            p.setPen(text_muted)
+            p.setFont(QFont("Segoe UI", 8))
+            p.drawText(QRectF(ml - 55, y - 9, 48, 18), Qt.AlignRight | Qt.AlignVCenter, f"{val:.1f}с")
+
+        leg_x = ml + pw - 340
+        p.fillRect(QRectF(leg_x, mt - 30, 12, 12), QColor("#388bfd" if is_dark else "#0969da"))
+        p.setPen(text_primary)
+        p.setFont(QFont("Segoe UI", 9))
+        p.drawText(QRectF(leg_x + 18, mt - 32, 140, 16), Qt.AlignLeft | Qt.AlignVCenter, "Время обслуж. (t_обсл)")
+
+        p.fillRect(QRectF(leg_x + 175, mt - 30, 12, 12), QColor("#f0883e" if is_dark else "#d47616"))
+        p.drawText(QRectF(leg_x + 193, mt - 32, 140, 16), Qt.AlignLeft | Qt.AlignVCenter, "Время в очер. (W_оч)")
+
+        n = len(nodes)
+        slot_w = pw / n
+        bar_w = min(48.0, max(18.0, slot_w * 0.65))
+
+        for i, nd in enumerate(nodes):
+            t_s = nd['avg_serv_val']
+            t_w = nd['q_avg_wait_val']
+            t_tot = nd['total_node_val']
+
+            bx = ml + i * slot_w + (slot_w - bar_w) / 2
+            bh_s = (t_s / y_max) * ph
+            bh_w = (t_w / y_max) * ph
+
+            by_s = mt + ph - bh_s
+            by_w = by_s - bh_w
+
+            p.setBrush(QBrush(QColor("#388bfd" if is_dark else "#0969da")))
+            p.setPen(Qt.NoPen)
+            p.drawRect(QRectF(bx, by_s, bar_w, bh_s))
+
+            p.setBrush(QBrush(QColor("#f0883e" if is_dark else "#d47616")))
+            p.drawRoundedRect(QRectF(bx, by_w, bar_w, bh_w), 3, 3)
+
+            p.setPen(text_primary)
+            p.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            p.drawText(QRectF(bx - 20, by_w - 20, bar_w + 40, 18), Qt.AlignCenter, f"{t_tot:.1f}с")
+
+            p.drawText(QRectF(bx - 20, mt + ph + 6, bar_w + 40, 18), Qt.AlignCenter, nd['device'])
+
+            self.hit_boxes.append((
+                QRectF(bx, mt, bar_w, ph + 30),
+                {
+                    'title': f"Узел: {nd['device']} + {nd['queue']}",
+                    'lines': [
+                        f"Общее время в узле: {t_tot:.3f} тактов",
+                        f"Время обслуживания: {t_s:.3f} тактов",
+                        f"Время ожидания: {t_w:.3f} тактов",
+                        f"Загрузка прибора: {nd['util']}",
+                        f"Ср. длина очереди: {nd['q_avg_len']}"
+                    ],
+                    'line_no': nd['line_no']
+                }
+            ))
+
+    def _draw_block_executions(self, p, ml, mt, pw, ph, is_dark, text_primary, text_muted, grid_color):
+        blks = self.parser.blocks
+        if not blks:
+            return
+
+        max_val = max(1.0, max(float(b['total'] or 0) for b in blks))
+        y_max = max_val * 1.2
+
+        for step_i in range(5):
+            val = (y_max / 4) * step_i
+            y = mt + ph - (val / y_max) * ph
+            p.setPen(QPen(grid_color, 1, Qt.DashLine))
+            p.drawLine(ml, y, ml + pw, y)
+            p.setPen(text_muted)
+            p.setFont(QFont("Segoe UI", 8))
+            p.drawText(QRectF(ml - 55, y - 9, 48, 18), Qt.AlignRight | Qt.AlignVCenter, str(round(val)))
+
+        n = len(blks)
+        slot_w = pw / n
+        bar_w = max(4.0, slot_w - 2.0)
+
+        for i, b in enumerate(blks):
+            v = float(b['total'] or 0)
+            bx = ml + i * slot_w
+            bh = (v / y_max) * ph
+            by = mt + ph - bh
+
+            cur_cnt = int(b.get('current', '0') or '0')
+            color = QColor("#ffa657" if cur_cnt > 0 else ("#79c0ff" if is_dark else "#0969da"))
+
+            p.setBrush(QBrush(color))
+            p.setPen(Qt.NoPen)
+            p.drawRect(QRectF(bx, by, bar_w, bh))
+
+            if n <= 25:
+                p.setPen(text_primary)
+                p.setFont(QFont("Segoe UI", 8))
+                p.drawText(QRectF(bx - 10, mt + ph + 6, bar_w + 20, 16), Qt.AlignCenter, b['block'])
+
+            self.hit_boxes.append((
+                QRectF(bx, mt, bar_w, ph + 25),
+                {
+                    'title': f"Блок: {b['block']}",
+                    'lines': [
+                        f"Всего входов (Total): {b['total']}",
+                        f"Транзактов сейчас (Current): {b['current']}"
+                    ],
+                    'line_no': b['line_no']
+                }
+            ))
+
+    def _draw_storage_stats(self, p, ml, mt, pw, ph, is_dark, text_primary, text_muted, grid_color):
+        stors = self.parser.storages
+        if not stors:
+            p.setPen(text_muted)
+            p.setFont(QFont("Segoe UI", 12))
+            p.drawText(QRectF(ml, mt, pw, ph), Qt.AlignCenter, "В модели отсутствуют многоканальные устройства (STORAGE)")
+            return
+
+        for step in (0.0, 0.25, 0.5, 0.75, 1.0):
+            y = mt + ph - step * ph
+            p.setPen(QPen(grid_color, 1, Qt.DashLine))
+            p.drawLine(ml, y, ml + pw, y)
+            p.setPen(text_muted)
+            p.setFont(QFont("Segoe UI", 8))
+            p.drawText(QRectF(ml - 55, y - 9, 48, 18), Qt.AlignRight | Qt.AlignVCenter, f"{round(step*100)}%")
+
+        n = len(stors)
+        slot_w = pw / n
+        bar_w = min(56.0, max(20.0, slot_w * 0.6))
+
+        for i, s in enumerate(stors):
+            try:
+                val = float(s['util'])
+            except Exception:
+                val = 0.0
+
+            bx = ml + i * slot_w + (slot_w - bar_w) / 2
+            bh = min(val, 1.0) * ph
+            by = mt + ph - bh
+
+            color = QColor("#8957e5" if is_dark else "#8250df")
+            p.setBrush(QBrush(color))
+            p.setPen(Qt.NoPen)
+            p.drawRoundedRect(QRectF(bx, by, bar_w, bh), 4, 4)
+
+            p.setPen(text_primary)
+            p.setFont(QFont("Segoe UI", 9, QFont.Bold))
+            p.drawText(QRectF(bx - 15, by - 20, bar_w + 30, 18), Qt.AlignCenter, f"{round(val*100, 1)}%")
+
+            p.drawText(QRectF(bx - 15, mt + ph + 6, bar_w + 30, 18), Qt.AlignCenter, s['name'])
+
+            p.setFont(QFont("Segoe UI", 8))
+            p.setPen(text_muted)
+            p.drawText(QRectF(bx - 20, mt + ph + 24, bar_w + 40, 16), Qt.AlignCenter, f"Ёмкость: {s['capacity']}")
+
+            self.hit_boxes.append((
+                QRectF(bx, mt, bar_w, ph + 45),
+                {
+                    'title': f"Память: {s['name']}",
+                    'lines': [
+                        f"Загрузка (Util): {s['util']}",
+                        f"Ёмкость (Capacity): {s['capacity']}",
+                        f"Ср. заполнение: {s['avg_contents']}",
+                        f"Макс. заполнение: {s['max_contents']}",
+                        f"Входов: {s['entries']}"
+                    ],
+                    'line_no': s['line_no']
+                }
+            ))
+
+    def _draw_tooltip(self, p, w, h, is_dark):
+        item = self.hovered_item
+        tw, th = 195, 24 + len(item.get('lines', [])) * 17 + 22
+        tx = self.hover_pos.x() + 15
+        ty = self.hover_pos.y() + 15
+
+        if tx + tw > w - 10:
+            tx = self.hover_pos.x() - tw - 15
+        if ty + th > h - 10:
+            ty = self.hover_pos.y() - th - 15
+
+        t_rect = QRectF(tx, ty, tw, th)
+
+        p.setBrush(QBrush(QColor("#1b1f20" if is_dark else "#ffffff")))
+        p.setPen(QPen(QColor("#bcdfff" if is_dark else "#0969da"), 1.5))
+        p.drawRoundedRect(t_rect, 6, 6)
+
+        p.setFont(QFont("Segoe UI", 10, QFont.Bold))
+        p.setPen(QColor("#bcdfff" if is_dark else "#0969da"))
+        p.drawText(QRectF(tx + 10, ty + 6, tw - 20, 18), Qt.AlignLeft, item['title'])
+
+        p.setFont(QFont("Segoe UI", 9))
+        p.setPen(QColor("#e0e5e9" if is_dark else "#1f2328"))
+        curr_y = ty + 26
+        for line in item.get('lines', []):
+            p.drawText(QRectF(tx + 10, curr_y, tw - 20, 16), Qt.AlignLeft, line)
+            curr_y += 17
+
+        p.setFont(QFont("Segoe UI", 8))
+        p.setPen(QColor("#7a8c9e" if is_dark else "#57606a"))
+        p.drawText(QRectF(tx + 10, curr_y + 2, tw - 20, 16), Qt.AlignLeft, "Ctrl + Клик: в листинг")
+
+class PerformanceDashboardWidget(QWidget):
+    itemClicked = Signal(int)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.theme = "dark"
+        self._build_ui()
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(6)
+
+        self.kpi_banner = QFrame()
+        self.kpi_banner.setObjectName("flowchart_toolbar")
+        kpi_layout = QHBoxLayout(self.kpi_banner)
+        kpi_layout.setContentsMargins(8, 6, 8, 6)
+        kpi_layout.setSpacing(10)
+
+        self.kpi_cards = []
+        titles = [
+            "Время Clock", "Скорость", "Ср. загрузка",
+            "Узкое место", "Худшая очередь", "Всего блоков"
+        ]
+        subtitles = [
+            "Абсолютное время", "Блоков / секунду", "Всех приборов",
+            "Макс. занятость", "Макс. задержка", "Входов в блоки"
+        ]
+        for t, s in zip(titles, subtitles):
+            card = QFrame()
+            card.setObjectName("kpi_card")
+            c_lay = QVBoxLayout(card)
+            c_lay.setContentsMargins(8, 4, 8, 4)
+            c_lay.setSpacing(2)
+
+            lbl_t = QLabel(t)
+            lbl_t.setObjectName("kpi_card_title")
+            lbl_v = QLabel("-")
+            lbl_v.setObjectName("kpi_card_value")
+            lbl_s = QLabel(s)
+            lbl_s.setObjectName("kpi_card_sub")
+
+            c_lay.addWidget(lbl_t)
+            c_lay.addWidget(lbl_v)
+            c_lay.addWidget(lbl_s)
+            kpi_layout.addWidget(card)
+            self.kpi_cards.append((lbl_t, lbl_v, lbl_s))
+
+        root.addWidget(self.kpi_banner)
+
+        self.toolbar = QFrame()
+        self.toolbar.setObjectName("chart_toolbar")
+        self.toolbar.setFixedHeight(36)
+        tb_lay = QHBoxLayout(self.toolbar)
+        tb_lay.setContentsMargins(8, 4, 8, 4)
+        tb_lay.setSpacing(8)
+
+        lbl_chart = QLabel("График:")
+        lbl_chart.setStyleSheet("font-weight: 600; font-size: 12px;")
+
+        self.combo_chart_type = QComboBox()
+        self.combo_chart_type.setObjectName("chart_type_combo")
+        self.combo_chart_type.setFixedHeight(28)
+        self.combo_chart_type.addItems([
+            "Загрузка устройств (Facility Utilization)",
+            "Очереди: средняя и макс. длина (Contents)",
+            "Очереди: среднее время ожидания (Wait Time)",
+            "Очереди: доля без ожидания (% Zeros)",
+            "Узлы: Время в очереди vs Время обслуживания",
+            "Нагрузка на блоки модели (Total Executions)",
+            "Многоканальные устройства (Storages)"
+        ])
+        self.combo_chart_type.setFocusPolicy(Qt.NoFocus)
+        self.combo_chart_type.currentIndexChanged.connect(self._on_type_changed)
+
+        self.btn_copy_chart = QPushButton("Копировать график")
+        self.btn_copy_chart.setObjectName("btn_chart_tool")
+        self.btn_copy_chart.setFixedHeight(28)
+        self.btn_copy_chart.setFocusPolicy(Qt.NoFocus)
+        self.btn_copy_chart.clicked.connect(self._copy_chart)
+
+        self.btn_save_chart = QPushButton("Экспорт PNG...")
+        self.btn_save_chart.setObjectName("btn_chart_tool")
+        self.btn_save_chart.setFixedHeight(28)
+        self.btn_save_chart.setFocusPolicy(Qt.NoFocus)
+        self.btn_save_chart.clicked.connect(lambda: self.chart_view.export_png(self))
+
+        tb_lay.addWidget(lbl_chart)
+        tb_lay.addWidget(self.combo_chart_type, 1)
+        tb_lay.addStretch()
+        tb_lay.addWidget(self.btn_copy_chart)
+        tb_lay.addWidget(self.btn_save_chart)
+
+        root.addWidget(self.toolbar)
+
+        self.chart_view = PerformanceChartView(self)
+        self.chart_view.itemClicked.connect(self.itemClicked.emit)
+        root.addWidget(self.chart_view, 1)
+
+    def _on_type_changed(self, idx):
+        self.chart_view.set_chart_type(idx)
+
+    def _copy_chart(self):
+        if self.chart_view.copy_to_clipboard():
+            QMessageBox.information(self, "Копирование", "График успешно скопирован в буфер обмена.")
+        else:
+            QMessageBox.warning(self, "Копирование", "Нет данных для копирования.")
+
+    def set_theme(self, theme):
+        self.theme = theme
+        self.chart_view.set_theme(theme)
+
+    def set_data(self, parser, device_groups, theme=None):
+        if theme:
+            self.theme = theme
+        self.chart_view.set_data(parser, device_groups, self.theme)
+
+        if parser:
+            abs_clock = parser.clocks.get("absolute", "-")
+            b_sec = parser.execution_stats.get("blocks_per_sec", "")
+            if b_sec:
+                try:
+                    f_bsec = float(b_sec)
+                    if f_bsec >= 1e6:
+                        b_sec_str = f"{f_bsec/1e6:.1f}M бл/с"
+                    elif f_bsec >= 1e3:
+                        b_sec_str = f"{f_bsec/1e3:.1f}K бл/с"
+                    else:
+                        b_sec_str = f"{round(f_bsec)} бл/с"
+                except Exception:
+                    b_sec_str = f"{b_sec} бл/с"
+            else:
+                b_sec_str = "-"
+
+            tot_blocks = parser.execution_stats.get("total_blocks", "-")
+
+            if parser.facilities:
+                utils = []
+                for f in parser.facilities:
+                    try:
+                        utils.append(float(f['util']))
+                    except Exception:
+                        pass
+                mean_u = (sum(utils) / len(utils)) if utils else 0.0
+                mean_u_str = f"{round(mean_u * 100, 1)}%"
+
+                b_fac = max(parser.facilities, key=lambda x: float(x.get('util', 0) or 0))
+                b_str = f"{b_fac['name']} ({round(float(b_fac.get('util', 0) or 0)*100)}%)"
+            else:
+                mean_u_str = "-"
+                b_str = "-"
+
+            if parser.queues:
+                worst_q = max(parser.queues, key=lambda x: float(x.get('avg_t', 0) or 0))
+                w_val = float(worst_q.get('avg_t', 0) or 0)
+                wq_str = f"{worst_q['name']} ({w_val:.1f}с)"
+            else:
+                wq_str = "-"
+
+            self.kpi_cards[0][1].setText(abs_clock)
+            self.kpi_cards[1][1].setText(b_sec_str)
+            self.kpi_cards[2][1].setText(mean_u_str)
+            self.kpi_cards[3][1].setText(b_str)
+            self.kpi_cards[4][1].setText(wq_str)
+            self.kpi_cards[5][1].setText(tot_blocks)
+
+    def clear(self):
+        self.chart_view.clear()
+        for _, val_lbl, _ in self.kpi_cards:
+            val_lbl.setText("-")
+
 def filter_table(table, text):
     text = text.lower().strip()
     for r in range(table.rowCount()):
@@ -2334,21 +4168,145 @@ def filter_table(table, text):
                 break
         table.setRowHidden(r, not match)
 
+class GPSSSimulationThread(QThread):
+    simulation_finished = Signal(bool, int, str, str, str, str)  # (success, retcode, stdout, stderr, lis_text, err_msg)
+    status_updated = Signal(str)
+
+    def __init__(self, exe_path, work_dir, gps_file, lis_file, target_os="windows", parent=None):
+        super().__init__(parent)
+        self.exe_path = exe_path
+        self.work_dir = work_dir
+        self.gps_file = gps_file
+        self.lis_file = lis_file
+        self.target_os = target_os
+        self._is_cancelled = False
+        self._process = None
+
+    def cancel(self):
+        self._is_cancelled = True
+        proc = self._process
+        if proc and proc.poll() is None:
+            try:
+                if sys.platform == "win32":
+                    proc.kill()
+                else:
+                    if hasattr(os, "killpg") and hasattr(os, "getpgid"):
+                        try:
+                            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                        except Exception:
+                            proc.kill()
+                    else:
+                        proc.kill()
+            except Exception:
+                pass
+
+    def run(self):
+        self.status_updated.emit("Подготовка к запуску GPSS/H...")
+
+        # Ensure executable permissions on Linux/POSIX
+        if sys.platform != "win32" and os.path.exists(self.exe_path):
+            try:
+                os.chmod(self.exe_path, 0o755)
+            except Exception:
+                pass
+
+        # Build command list
+        cmd = [self.exe_path, "model.gps"]
+
+        # Support Wine on Linux if running a Windows .exe binary
+        if sys.platform != "win32" and self.exe_path.lower().endswith(".exe"):
+            wine_bin = shutil.which("wine")
+            if wine_bin:
+                cmd = [wine_bin, self.exe_path, "model.gps"]
+
+        kwargs = {
+            "cwd": self.work_dir,
+            "stdin": subprocess.PIPE,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.PIPE,
+            "text": True,
+            "errors": "replace"
+        }
+
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        elif hasattr(os, "setsid"):
+            kwargs["preexec_fn"] = os.setsid
+
+        try:
+            self._process = subprocess.Popen(cmd, **kwargs)
+        except Exception as e:
+            err_msg = str(e)
+            if sys.platform != "win32" and ("Exec format error" in err_msg or "No such file" in err_msg):
+                err_msg += (
+                    "\n\nПодсказка для Linux: исполняемый файл GPSS/H может быть 32-битным (x86 ELF) или Windows (.exe).\n"
+                    "- Для Windows .exe установите Wine: sudo apt install wine\n"
+                    "- Для 32-битного ELF установите 32-битные библиотеки: sudo dpkg --add-architecture i386 && sudo apt install libc6:i386"
+                )
+            self.simulation_finished.emit(False, -1, "", "", "", f"Сбой при запуске GPSS:\n{err_msg}")
+            return
+
+        self.status_updated.emit("Выполняется симуляция...")
+
+        stdout, stderr = "", ""
+        try:
+            stdout, stderr = self._process.communicate(input="model.gps\n", timeout=120)
+        except subprocess.TimeoutExpired:
+            self.cancel()
+            self.simulation_finished.emit(
+                False, -1, stdout, stderr, "",
+                "Симуляция превысила лимит времени (120 сек).\nВозможно, в модели зациклен переход (проверьте TERMINATE / START / блоки TEST/TRANSFER)."
+            )
+            return
+        except Exception as e:
+            self.cancel()
+            self.simulation_finished.emit(False, -1, stdout, stderr, "", f"Ошибка выполнения процесса:\n{e}")
+            return
+
+        if self._is_cancelled:
+            self.simulation_finished.emit(False, -1, stdout, stderr, "", "Симуляция прервана пользователем.")
+            return
+
+        retcode = self._process.returncode if self._process else 0
+
+        if not os.path.exists(self.lis_file):
+            self.simulation_finished.emit(
+                False, retcode, stdout, stderr, "",
+                "Файл model.lis не был создан. Проверьте вкладку консоли на наличие синтаксических ошибок GPSS."
+            )
+            return
+
+        lis_text = ""
+        for enc in ("cp866", "utf-8", "latin-1", "windows-1251"):
+            try:
+                with open(self.lis_file, "r", encoding=enc) as f:
+                    lis_text = f.read()
+                break
+            except UnicodeDecodeError:
+                continue
+
+        self.simulation_finished.emit(True, retcode, stdout, stderr, lis_text, "")
+
 class GPSSStudio(QMainWindow):
     def __init__(self):
         super().__init__()
         self.resize(1440, 780)
         self.current_file_path = None
+        self.sim_thread = None
 
         self.current_dir = get_app_dir()
         self.config = ConfigManager.load()
         self.theme = self.config.get("theme", "dark")
-        self.target_os = self.config.get("target_os", "windows")
+        self.target_os = self.config.get("target_os", "windows" if sys.platform == "win32" else "linux")
         self.work_dir = self.config.get("work_dir", self.current_dir)
         self.exe_path = self.config.get("executable_path", "")
         if not os.path.exists(self.exe_path):
-            exe_name = "gpssh.exe" if sys.platform == "win32" else "gpssh"
+            exe_name = "gpssh.exe" if self.target_os == "windows" else "gpssh"
             self.exe_path = get_resource_path(exe_name)
+            if not os.path.exists(self.exe_path):
+                which_p = shutil.which(exe_name) or shutil.which("gpssh") or shutil.which("gpssh.exe")
+                if which_p:
+                    self.exe_path = which_p
         self.show_line_numbers = self.config.get("show_line_numbers", False)
         self.zoom_level = self.config.get("zoom", 100)
 
@@ -2378,6 +4336,8 @@ class GPSSStudio(QMainWindow):
                 self.editor.load_code(DEFAULT_TEMPLATE)
         else:
             self.editor.load_code(DEFAULT_TEMPLATE)
+
+        self._refresh_flowchart_from_editor()
 
         if os.path.exists(self.lis_file):
             try:
@@ -2412,9 +4372,7 @@ class GPSSStudio(QMainWindow):
             self.action_popup.setStyleSheet(sheet)
 
         mono_size = max(8, round(11 * scale))
-        mono_font = QFont("Consolas", mono_size)
-        mono_font.setStyleHint(QFont.Monospace)
-        mono_font.setFixedPitch(True)
+        mono_font = get_monospace_font(mono_size)
 
         if hasattr(self, "editor"):
             self.editor.setFont(mono_font)
@@ -2435,13 +4393,18 @@ class GPSSStudio(QMainWindow):
             self.console_viewer.setFont(mono_font)
             self.console_viewer.setTabStopDistance(QFontMetrics(mono_font).horizontalAdvance(' ') * 8)
 
-        table_font = QFont("Segoe UI", max(9, round(12 * scale)))
+        table_font = get_ui_font(max(9, round(12 * scale)))
         row_height = max(20, round(26 * scale))
         if hasattr(self, "all_summary_tables"):
             for tbl in self.all_summary_tables:
                 tbl.setFont(table_font)
                 tbl.horizontalHeader().setFont(table_font)
                 tbl.verticalHeader().setDefaultSectionSize(row_height)
+
+        if hasattr(self, "flowchart_widget"):
+            self.flowchart_widget.set_theme(theme)
+        if hasattr(self, "charts_widget"):
+            self.charts_widget.set_theme(theme)
 
         if hasattr(self, "lbl_status_theme"):
             self.lbl_status_theme.setText(f"Тема: {'Светлая' if theme == 'light' else 'Тёмная'}")
@@ -2614,6 +4577,17 @@ class GPSSStudio(QMainWindow):
         self.summary_table = self.overview_table
         self.summary_subtabs.addTab(self.overview_table, "Сводка")
 
+        self.device_group_table = ClickableTableWidget()
+        self.device_group_table.setColumnCount(12)
+        self.device_group_table.setHorizontalHeaderLabels([
+            "Устройство", "Тип", "Загрузка (Util)", "Входов", "Ср. время обслуж.",
+            "Очередь", "Ср. длина очер.", "Макс. длина", "Ср. время очер.", "% без ожид.",
+            "Ср. время в узле", "Статус"
+        ])
+        for c in range(12):
+            self.device_group_table.horizontalHeader().setSectionResizeMode(c, QHeaderView.ResizeToContents)
+        self.summary_subtabs.addTab(self.device_group_table, "По устройствам")
+
         self.fac_table = ClickableTableWidget()
         self.fac_table.setColumnCount(8)
         self.fac_table.setHorizontalHeaderLabels([
@@ -2662,7 +4636,7 @@ class GPSSStudio(QMainWindow):
         self.summary_subtabs.addTab(self.sys_table, "Система")
 
         self.all_summary_tables = [
-            self.overview_table, self.fac_table, self.q_table,
+            self.overview_table, self.device_group_table, self.fac_table, self.q_table,
             self.storage_table, self.block_table, self.sys_table
         ]
 
@@ -2673,6 +4647,17 @@ class GPSSStudio(QMainWindow):
 
         sum_layout.addWidget(self.summary_subtabs, 1)
         self.tabs.addTab(self.summary_widget, "Сводка для отчёта")
+
+        self.flowchart_widget = GPSSFlowchartWidget()
+        self.flowchart_widget.blockClicked.connect(self.jump_to_editor_line)
+        self.flowchart_widget.refreshRequested.connect(self._refresh_flowchart_from_editor)
+        self.flowchart_widget.set_theme(self.theme)
+        self.tabs.addTab(self.flowchart_widget, "Блок-схема")
+
+        self.charts_widget = PerformanceDashboardWidget()
+        self.charts_widget.itemClicked.connect(self._on_chart_item_clicked)
+        self.charts_widget.set_theme(self.theme)
+        self.tabs.addTab(self.charts_widget, "Графики")
 
         self.lis_widget = QWidget()
         lis_layout = QVBoxLayout(self.lis_widget)
@@ -2716,6 +4701,8 @@ class GPSSStudio(QMainWindow):
         self.console_viewer.setStyleSheet("font-family: Consolas, 'Courier New', monospace;")
         self.tabs.addTab(self.console_viewer, "Вывод консоли")
 
+        self.tabs.currentChanged.connect(self._on_main_tab_changed)
+
         right_layout.addWidget(self.tabs)
         splitter.addWidget(right_widget)
 
@@ -2757,8 +4744,36 @@ class GPSSStudio(QMainWindow):
         status_bar.addPermanentWidget(self.lbl_status_zoom)
 
     def _show_listing_search(self):
-        self.tabs.setCurrentIndex(1)
+        self.tabs.setCurrentIndex(3)
         self.lis_search_bar.show_bar()
+
+    def _on_main_tab_changed(self, idx):
+        if idx == 1:
+            self._refresh_flowchart_from_editor()
+
+    def _refresh_flowchart_from_editor(self):
+        if hasattr(self, "flowchart_widget") and hasattr(self, "editor"):
+            code = self.editor.get_formatted_code(target_os=self.target_os)
+            stats = getattr(self, "_last_parser", None)
+            self.flowchart_widget.update_model(code, stats)
+
+    def jump_to_editor_line(self, line_no):
+        if not line_no or line_no <= 0:
+            return
+        doc = self.editor.document()
+        block = doc.findBlockByNumber(line_no - 1)
+        if not block.isValid():
+            return
+        cursor = QTextCursor(block)
+        self.editor.setTextCursor(cursor)
+        self.editor.centerCursor()
+        self.editor.setFocus()
+        self.lbl_status_msg.setText(f"Переход к строке {line_no} в редакторе")
+
+    def _on_chart_item_clicked(self, line_no):
+        if line_no and line_no > 0:
+            self.tabs.setCurrentIndex(3)
+            self.jump_to_listing_line(line_no)
 
     def _toggle_action_menu(self):
         if self.action_popup.isVisible():
@@ -2788,6 +4803,8 @@ class GPSSStudio(QMainWindow):
         QShortcut(QKeySequence("Ctrl+1"), self, lambda: self.tabs.setCurrentIndex(0))
         QShortcut(QKeySequence("Ctrl+2"), self, lambda: self.tabs.setCurrentIndex(1))
         QShortcut(QKeySequence("Ctrl+3"), self, lambda: self.tabs.setCurrentIndex(2))
+        QShortcut(QKeySequence("Ctrl+4"), self, lambda: self.tabs.setCurrentIndex(3))
+        QShortcut(QKeySequence("Ctrl+5"), self, lambda: self.tabs.setCurrentIndex(4))
 
         QShortcut(QKeySequence.ZoomIn, self, self.zoom_in)
         QShortcut(QKeySequence.ZoomOut, self, self.zoom_out)
@@ -2797,7 +4814,7 @@ class GPSSStudio(QMainWindow):
         QShortcut(QKeySequence("Ctrl+0"), self, self.zoom_reset)
 
     def _handle_find_shortcut(self):
-        if self.tabs.currentIndex() == 1 or self.lis_viewer.hasFocus():
+        if self.tabs.currentIndex() == 3 or self.lis_viewer.hasFocus():
             self.lis_search_bar.show_bar()
         else:
             self.search_bar.show_bar()
@@ -2813,7 +4830,7 @@ class GPSSStudio(QMainWindow):
         line_no = item.data(Qt.UserRole)
         if not line_no or line_no <= 0:
             return
-        self.tabs.setCurrentIndex(1)
+        self.tabs.setCurrentIndex(3)
         self.jump_to_listing_line(line_no)
 
     def jump_to_listing_line(self, line_no):
@@ -2999,8 +5016,17 @@ class GPSSStudio(QMainWindow):
             for tbl in self.all_summary_tables:
                 tbl.setRowCount(0)
         if hasattr(self, "summary_subtabs"):
-            self.summary_subtabs.setTabVisible(3, True)
+            self.summary_subtabs.setTabVisible(4, True)
             self.summary_subtabs.setCurrentIndex(0)
+
+        if hasattr(self, "flowchart_widget"):
+            self.flowchart_widget.view.listing_stats = {}
+            self.flowchart_widget.view.rebuild_flowchart()
+
+        if hasattr(self, "charts_widget"):
+            self.charts_widget.clear()
+
+        self._last_parser = None
 
         if hasattr(self, "lis_viewer"):
             self.lis_viewer.clear()
@@ -3020,6 +5046,9 @@ class GPSSStudio(QMainWindow):
             self.tabs.setCurrentIndex(0)
 
     def reset_model(self):
+        if hasattr(self, "sim_thread") and self.sim_thread and self.sim_thread.isRunning():
+            self.sim_thread.cancel()
+            self.sim_thread.wait(1000)
         self.editor.load_code(DEFAULT_TEMPLATE)
         self.current_file_path = None
         self.editor.document().setModified(False)
@@ -3046,8 +5075,15 @@ class GPSSStudio(QMainWindow):
             self._apply_config()
 
     def _apply_config(self):
-        self.target_os = self.config.get("target_os", "windows")
+        self.target_os = self.config.get("target_os", "windows" if sys.platform == "win32" else "linux")
         self.exe_path = self.config.get("executable_path", "")
+        if not os.path.exists(self.exe_path):
+            exe_name = "gpssh.exe" if self.target_os == "windows" else "gpssh"
+            self.exe_path = get_resource_path(exe_name)
+            if not os.path.exists(self.exe_path):
+                which_p = shutil.which(exe_name) or shutil.which("gpssh") or shutil.which("gpssh.exe")
+                if which_p:
+                    self.exe_path = which_p
         self.work_dir = self.config.get("work_dir", self.current_dir)
         self.theme = self.config.get("theme", "dark")
         self.show_line_numbers = self.config.get("show_line_numbers", False)
@@ -3066,6 +5102,10 @@ class GPSSStudio(QMainWindow):
         self.apply_theme(self.theme)
 
     def closeEvent(self, event):
+        if hasattr(self, "sim_thread") and self.sim_thread and self.sim_thread.isRunning():
+            self.sim_thread.cancel()
+            self.sim_thread.wait(1500)
+
         if self.editor.document().isModified():
             res = QMessageBox.question(
                 self, "Несохранённые изменения",
@@ -3083,14 +5123,36 @@ class GPSSStudio(QMainWindow):
         event.accept()
 
     def run_simulation(self):
+        if hasattr(self, "sim_thread") and self.sim_thread and self.sim_thread.isRunning():
+            self.stop_simulation()
+        else:
+            self.start_simulation()
+
+    def stop_simulation(self):
+        if hasattr(self, "sim_thread") and self.sim_thread and self.sim_thread.isRunning():
+            self.lbl_status_msg.setText("Остановка симуляции...")
+            self.btn_run.setEnabled(False)
+            self.sim_thread.cancel()
+
+    def start_simulation(self):
+        # Validate executable path with fallbacks
         if not os.path.exists(self.exe_path):
-            QMessageBox.critical(
-                self, "Ошибка",
-                f"Исполняемый файл GPSS не найден!\n\nПуть: {self.exe_path}\n"
-                f"Целевая ОС: {'Windows' if self.target_os == 'windows' else 'Linux'}\n\n"
-                "Укажите правильный путь в настройках."
-            )
-            return
+            exe_name = "gpssh.exe" if self.target_os == "windows" else "gpssh"
+            fallback = shutil.which(self.exe_path) or shutil.which(exe_name) or shutil.which("gpssh") or shutil.which("gpssh.exe") or get_resource_path(exe_name)
+            if fallback and os.path.exists(fallback):
+                self.exe_path = fallback
+            else:
+                extra_hint = ""
+                if sys.platform != "win32" and self.exe_path.lower().endswith(".exe"):
+                    if not shutil.which("wine"):
+                        extra_hint = "\n\nПодсказка для Linux: запуск Windows .exe требует установленного Wine (apt install wine)."
+                QMessageBox.critical(
+                    self, "Ошибка",
+                    f"Исполняемый файл GPSS не найден!\n\nПуть: {self.exe_path}\n"
+                    f"Целевая ОС: {'Windows' if self.target_os == 'windows' else 'Linux'}\n\n"
+                    f"Укажите правильный путь в настройках (кнопка 'menu' -> Настройки).{extra_hint}"
+                )
+                return
 
         if not os.path.exists(self.work_dir):
             try:
@@ -3100,12 +5162,25 @@ class GPSSStudio(QMainWindow):
 
         code = self.editor.get_formatted_code(target_os=self.target_os)
 
-        try:
-            with open(self.gps_file, "w", encoding="ascii", errors="replace", newline="") as f:
-                f.write(code)
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка сохранения", f"Не удалось записать model.gps:\n{e}")
-            return
+        # Write model.gps with robust encoding handling
+        written = False
+        enc_list = ["cp866", "windows-1251", "utf-8"] if self.target_os == "windows" else ["utf-8", "latin-1", "cp866"]
+        for enc in enc_list:
+            try:
+                with open(self.gps_file, "w", encoding=enc, newline="") as f:
+                    f.write(code)
+                written = True
+                break
+            except (UnicodeEncodeError, OSError):
+                continue
+
+        if not written:
+            try:
+                with open(self.gps_file, "w", encoding="ascii", errors="replace", newline="") as f:
+                    f.write(code)
+            except Exception as e:
+                QMessageBox.critical(self, "Ошибка сохранения", f"Не удалось записать model.gps:\n{e}")
+                return
 
         if os.path.exists(self.lis_file):
             try:
@@ -3113,56 +5188,58 @@ class GPSSStudio(QMainWindow):
             except OSError:
                 pass
 
-        try:
-            if sys.platform != "win32" and os.path.exists(self.exe_path):
-                try:
-                    os.chmod(self.exe_path, 0o755)
-                except Exception:
-                    pass
+        # Update UI to running state
+        self.btn_run.setText("Остановить (F5)")
+        self.btn_run.setProperty("running", "true")
+        self.btn_run.style().unpolish(self.btn_run)
+        self.btn_run.style().polish(self.btn_run)
+        self.btn_reset.setEnabled(False)
+        self.lbl_status_msg.setText("Запуск симуляции GPSS/H...")
 
-            kwargs = {
-                "cwd": self.work_dir,
-                "capture_output": True,
-                "text": True,
-                "errors": "replace",
-                "timeout": 15
-            }
-            if sys.platform == "win32":
-                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        # Start simulation in background QThread
+        self.sim_thread = GPSSSimulationThread(
+            self.exe_path, self.work_dir, self.gps_file, self.lis_file,
+            target_os=self.target_os, parent=self
+        )
+        self.sim_thread.status_updated.connect(self._on_simulation_status)
+        self.sim_thread.simulation_finished.connect(self._on_simulation_finished)
+        self.sim_thread.start()
 
-            process = subprocess.run(
-                [self.exe_path, "model.gps"],
-                input="model.gps\n",
-                **kwargs
-            )
-        except subprocess.TimeoutExpired:
-            QMessageBox.warning(self, "Таймаут", "Процесс GPSS превысил таймаут ожидания (15 сек). Проверьте условия завершения модели.")
-            return
-        except Exception as e:
-            QMessageBox.critical(self, "Ошибка запуска", f"Сбой при запуске GPSS:\n{e}")
-            return
+    def _on_simulation_status(self, msg):
+        self.lbl_status_msg.setText(msg)
 
-        self.console_viewer.setPlainText(f"STDOUT:\n{process.stdout}\n\nSTDERR:\n{process.stderr}")
+    def _on_simulation_finished(self, success, retcode, stdout, stderr, lis_text, err_msg):
+        # Restore run and reset button states
+        self.btn_run.setEnabled(True)
+        self.btn_run.setText("Запустить (F5)")
+        self.btn_run.setProperty("running", "false")
+        self.btn_run.style().unpolish(self.btn_run)
+        self.btn_run.style().polish(self.btn_run)
+        self.btn_reset.setEnabled(True)
 
-        if not os.path.exists(self.lis_file):
-            self.tabs.setCurrentIndex(2)
-            self.lis_viewer.setPlainText("Файл model.lis не был создан. Проверьте вкладку консоли.")
-            self.lbl_status_msg.setText("Ошибка запуска (файл листинга не создан)")
-            return
+        # Update console output
+        console_out = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+        if err_msg:
+            console_out += f"\n\nСИСТЕМНОЕ СООБЩЕНИЕ:\n{err_msg}"
+        self.console_viewer.setPlainText(console_out)
 
-        lis_text = ""
-        for enc in ("cp866", "latin-1", "utf-8"):
-            try:
-                with open(self.lis_file, "r", encoding=enc) as f:
-                    lis_text = f.read()
-                break
-            except UnicodeDecodeError:
-                continue
+        if success:
+            self.lis_viewer.setPlainText(lis_text)
+            self._parse_and_fill_summary(lis_text)
+            self._refresh_flowchart_from_editor()
+            self.tabs.setCurrentIndex(0)
+            self.lbl_status_msg.setText("Симуляция успешно завершена")
+        else:
+            if lis_text:
+                self.lis_viewer.setPlainText(lis_text)
+                self._parse_and_fill_summary(lis_text)
+            else:
+                self.lis_viewer.setPlainText(f"Листинг недоступен.\n{err_msg}")
+            self.tabs.setCurrentIndex(4)
+            short_err = err_msg.split("\n")[0] if err_msg else "Ошибка запуска"
+            self.lbl_status_msg.setText(f"Ошибка: {short_err}")
+            QMessageBox.warning(self, "Результат симуляции", err_msg or "Произошла ошибка при выполнении модели.")
 
-        self.lis_viewer.setPlainText(lis_text)
-        self._parse_and_fill_summary(lis_text)
-        self.tabs.setCurrentIndex(0)
-        self.lbl_status_msg.setText("Симуляция успешно завершена")
 
     def _populate_key_value_table(self, table, data):
         table.setRowCount(len(data))
@@ -3190,6 +5267,7 @@ class GPSSStudio(QMainWindow):
 
     def _parse_and_fill_summary(self, text):
         p = GPSSListingParser(text)
+        self._last_parser = p
 
         overview_data = []
 
@@ -3258,6 +5336,51 @@ class GPSSStudio(QMainWindow):
 
         self._populate_key_value_table(self.overview_table, overview_data)
 
+        code_str = self.editor.get_formatted_code(target_os=self.target_os)
+        dev_groups, group_summary = analyze_device_grouping(p, code_str)
+
+        self.device_group_table.setRowCount(len(dev_groups))
+        for row, g in enumerate(dev_groups):
+            items = [
+                g['device'],
+                g['type'],
+                g['util'],
+                g['entries'],
+                g['avg_serv'],
+                g['queue'],
+                g['q_avg_len'],
+                g['q_max_len'],
+                g['q_avg_wait'],
+                g['q_zero_pct'],
+                g['total_node_time'],
+                g['status']
+            ]
+            lno = g['line_no']
+            for col, val in enumerate(items):
+                it = QTableWidgetItem(str(val))
+                it.setData(Qt.UserRole, lno)
+                it.setToolTip(f"Ctrl + Клик для перехода к строке {lno} в листинге")
+                it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                if col in (1, 2, 3, 4, 6, 7, 8, 9, 10, 11):
+                    it.setTextAlignment(Qt.AlignCenter)
+                if col == 2:
+                    u_val = g.get('util_val', 0.0)
+                    if u_val >= 0.90:
+                        it.setForeground(QColor("#f85149" if self.theme == "dark" else "#cf222e"))
+                    elif u_val >= 0.70:
+                        it.setForeground(QColor("#ffa657" if self.theme == "dark" else "#b78103"))
+                    else:
+                        it.setForeground(QColor("#7ee787" if self.theme == "dark" else "#1a7f37"))
+                elif col in (4, 8, 10):
+                    it.setForeground(QColor("#bcdfff" if self.theme == "dark" else "#0969da"))
+                elif col == 11:
+                    st = g['status']
+                    if 'AVAIL' in st or 'BUSY' in st:
+                        it.setForeground(QColor("#7ee787" if self.theme == "dark" else "#1a7f37"))
+                    else:
+                        it.setForeground(QColor("#ffa657" if self.theme == "dark" else "#b78103"))
+                self.device_group_table.setItem(row, col, it)
+
         self.fac_table.setRowCount(len(p.facilities))
         for row, f in enumerate(p.facilities):
             lno = f["line_no"]
@@ -3311,7 +5434,7 @@ class GPSSStudio(QMainWindow):
                 self.q_table.setItem(row, col, it)
 
         if p.storages:
-            self.summary_subtabs.setTabVisible(3, True)
+            self.summary_subtabs.setTabVisible(4, True)
             self.storage_table.setRowCount(len(p.storages))
             for row, s in enumerate(p.storages):
                 lno = s["line_no"]
@@ -3338,7 +5461,7 @@ class GPSSStudio(QMainWindow):
                     self.storage_table.setItem(row, col, it)
         else:
             self.storage_table.setRowCount(0)
-            self.summary_subtabs.setTabVisible(3, False)
+            self.summary_subtabs.setTabVisible(4, False)
 
         self.block_table.setRowCount(len(p.blocks))
         for row, b in enumerate(p.blocks):
@@ -3394,11 +5517,17 @@ class GPSSStudio(QMainWindow):
             if tbl.columnCount() >= 3 and tbl in (self.overview_table, self.sys_table):
                 tbl.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
 
+        if hasattr(self, "charts_widget"):
+            self.charts_widget.set_data(p, dev_groups, theme=self.theme)
+
+        if hasattr(self, "flowchart_widget"):
+            self.flowchart_widget.update_model(code_str, p)
+
 if __name__ == "__main__":
     if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("sl1dee36.gpssstudio.ide.1.5")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("sl1dee36.gpssstudio.ide.1.6.0")
         except Exception:
             pass
 
