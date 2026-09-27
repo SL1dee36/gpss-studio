@@ -1,7 +1,7 @@
 # Description: Lightweight desktop IDE and simulation runner for Wolverine Software GPSS/H
 # Author: Nazaryan Artem @Sl1dee36
-# Date: 16.09.2026
-# Current version: v1.6.0
+# Date: 27.09.2026
+# Current version: v1.6.1
 # License: MIT
 
 import os
@@ -2546,6 +2546,15 @@ BLOCK_COLORS_LIGHT = {
     'OTHER': QColor('#57606a')
 }
 
+GPSS_FLOWCHART_BLOCKS = {
+    "GENERATE", "TERMINATE", "SEIZE", "RELEASE", "ADVANCE",
+    "QUEUE", "DEPART", "ENTER", "LEAVE", "TRANSFER",
+    "TEST", "ASSIGN", "MARK", "PRIORITY", "SPLIT", "ASSEMBLE",
+    "GATHER", "MATCH", "PREEMPT", "RETURN", "SAVEVALUE",
+    "MSAVEVALUE", "TABULATE", "GATE", "SELECT", "COUNT",
+    "INDEX", "PRINT", "LOGIC", "BUFFER", "LINK", "UNLINK", "LOOP"
+}
+
 class GPSSFlowchartParser:
     @classmethod
     def parse(cls, code_text):
@@ -2558,26 +2567,47 @@ class GPSSFlowchartParser:
             clean = line.strip()
             if not clean or clean.startswith('*'):
                 continue
-            tokens = clean.split(None, 2)
+
+            comment = ''
+            if ';' in clean:
+                clean, comment = clean.split(';', 1)
+                clean = clean.strip()
+                comment = ';' + comment.strip()
+
+            tokens = clean.split()
+            if not tokens:
+                continue
+
+            label = ''
             first = tokens[0].upper().rstrip(':')
-            if first in GPSS_CORE_KEYWORDS:
-                label = ''
+
+            if first in GPSS_FLOWCHART_BLOCKS:
                 op = first
-                operands = tokens[1] if len(tokens) > 1 else ''
-                comment = tokens[2] if len(tokens) > 2 else ''
-            elif len(tokens) > 1 and tokens[1].upper().rstrip(':') in GPSS_CORE_KEYWORDS:
+                arg_tokens = tokens[1:]
+            elif len(tokens) > 1 and tokens[1].upper().rstrip(':') in GPSS_FLOWCHART_BLOCKS:
                 label = tokens[0].rstrip(':')
                 op = tokens[1].upper().rstrip(':')
-                rest = tokens[2] if len(tokens) > 2 else ''
-                op_match = re.match(r'(\S+)(.*)', rest)
-                operands = op_match.group(1) if op_match else ''
-                comment = op_match.group(2).strip() if op_match else ''
+                arg_tokens = tokens[2:]
             else:
-                continue
+                continue  # Пропускаем SIMULATE, START, END, STORAGE, TABLE и другие не-блоки
+
+            # Поддержка составных условий: TEST L, TEST GE, GATE NU и т.д.
+            aux_candidates = {
+                "TEST": {"L", "LE", "E", "NE", "G", "GE"},
+                "GATE": {"LS", "LR", "U", "NU", "SF", "SNF", "SE", "SNE", "NI", "I"},
+                "LOGIC": {"S", "R", "I"},
+                "SELECT": {"L", "LE", "E", "NE", "G", "GE", "MIN", "MAX"}
+            }
+            if op in aux_candidates and arg_tokens and arg_tokens[0].upper() in aux_candidates[op]:
+                op = f"{op} {arg_tokens[0].upper()}"
+                arg_tokens = arg_tokens[1:]
+
+            operands = " ".join(arg_tokens)
 
             b_idx = len(blocks)
             if label:
                 labels[label.upper()] = b_idx
+
             blocks.append({
                 'index': b_idx,
                 'block_num': b_idx + 1,
@@ -2592,36 +2622,40 @@ class GPSSFlowchartParser:
 
         edges = []
         for i, b in enumerate(blocks):
-            op = b['op']
+            base_op = b['op'].split()[0]
             raw_ops = [p.strip() for p in b['operands'].split(',')] if b['operands'] else []
-            
-            if op == 'TERMINATE':
+
+            if base_op == 'TERMINATE':
                 continue
-            elif op == 'TRANSFER':
+            elif base_op == 'TRANSFER':
                 if len(raw_ops) >= 2 and raw_ops[0] == '':
+                    # Безусловный переход TRANSFER ,LABEL
                     target = raw_ops[1].upper()
                     edges.append({
                         'from': i, 'to': labels.get(target, None),
                         'target_label': target, 'type': 'jump', 'label': ''
                     })
                 elif len(raw_ops) >= 2 and re.match(r'^(\d*\.\d+|\d+)$', raw_ops[0]):
+                    # Статистический переход TRANSFER p,B,C
                     prob = float(raw_ops[0])
-                    t1 = raw_ops[1].upper() if raw_ops[1] else ''
-                    t2 = raw_ops[2].upper() if len(raw_ops) > 2 and raw_ops[2] else ''
-                    p1_label = f"{round(prob*100)}%"
-                    p2_label = f"{round((1-prob)*100)}%"
-                    
-                    t1_idx = labels.get(t1, i+1 if not t1 else None)
+                    t_b = raw_ops[1].upper() if raw_ops[1] else ''
+                    t_c = raw_ops[2].upper() if len(raw_ops) > 2 and raw_ops[2] else ''
+
+                    p_c_label = f"{round(prob * 100)}%"
+                    p_b_label = f"{round((1 - prob) * 100)}%"
+
+                    # Ветка B (1-p)
+                    b_idx = labels.get(t_b, i + 1 if not t_b else None)
                     edges.append({
-                        'from': i, 'to': t1_idx,
-                        'target_label': t1 or 'next', 'type': 'prob', 'label': p1_label
+                        'from': i, 'to': b_idx,
+                        'target_label': t_b or 'next', 'type': 'prob', 'label': p_b_label
                     })
-                    if t2:
-                        t2_idx = labels.get(t2, None)
-                        edges.append({
-                            'from': i, 'to': t2_idx,
-                            'target_label': t2, 'type': 'prob', 'label': p2_label
-                        })
+                    # Ветка C (p)
+                    c_idx = labels.get(t_c, i + 1 if not t_c else None)
+                    edges.append({
+                        'from': i, 'to': c_idx,
+                        'target_label': t_c or 'next', 'type': 'prob', 'label': p_c_label
+                    })
                 elif len(raw_ops) >= 2 and raw_ops[0].upper() in ('BOTH', 'ALL'):
                     for sub_t in raw_ops[1:]:
                         st = sub_t.upper()
@@ -2637,11 +2671,8 @@ class GPSSFlowchartParser:
                             'target_label': st, 'type': 'jump', 'label': ''
                         })
                     elif i + 1 < len(blocks):
-                        edges.append({
-                            'from': i, 'to': i + 1,
-                            'target_label': '', 'type': 'seq', 'label': ''
-                        })
-            elif op in ('TEST', 'GATE', 'LOOP'):
+                        edges.append({'from': i, 'to': i + 1, 'target_label': '', 'type': 'seq', 'label': ''})
+            elif base_op in ('TEST', 'GATE', 'LOOP'):
                 target = raw_ops[-1].upper() if raw_ops else ''
                 if target in labels:
                     edges.append({
@@ -2649,11 +2680,8 @@ class GPSSFlowchartParser:
                         'target_label': target, 'type': 'branch', 'label': 'ветвь'
                     })
                 if i + 1 < len(blocks):
-                    edges.append({
-                        'from': i, 'to': i + 1,
-                        'target_label': '', 'type': 'seq', 'label': 'далее'
-                    })
-            elif op == 'SPLIT':
+                    edges.append({'from': i, 'to': i + 1, 'target_label': '', 'type': 'seq', 'label': ''})
+            elif base_op == 'SPLIT':
                 target = raw_ops[1].upper() if len(raw_ops) > 1 else ''
                 if target in labels:
                     edges.append({
@@ -2661,36 +2689,43 @@ class GPSSFlowchartParser:
                         'target_label': target, 'type': 'split', 'label': 'копия'
                     })
                 if i + 1 < len(blocks):
-                    edges.append({
-                        'from': i, 'to': i + 1,
-                        'target_label': '', 'type': 'seq', 'label': 'оригинал'
-                    })
+                    edges.append({'from': i, 'to': i + 1, 'target_label': '', 'type': 'seq', 'label': ''})
             else:
                 if i + 1 < len(blocks):
-                    edges.append({
-                        'from': i, 'to': i + 1,
-                        'target_label': '', 'type': 'seq', 'label': ''
-                    })
+                    edges.append({'from': i, 'to': i + 1, 'target_label': '', 'type': 'seq', 'label': ''})
 
+        # Сегментация: новая колонка создается ТОЛЬКО для нового GENERATE или после разрыва потока (не по каждой метке!)
         segments = []
         current_seg = None
+        gen_count = 0
         for i, b in enumerate(blocks):
+            base_op = b['op'].split()[0]
             starts_new = False
-            if b['label']:
+
+            if base_op == 'GENERATE':
                 starts_new = True
-            elif b['op'] == 'GENERATE':
-                starts_new = True
-            elif i > 0 and blocks[i-1]['op'] in ('TERMINATE', 'TRANSFER') and not any(e['from'] == i-1 and e['to'] == i for e in edges):
-                starts_new = True
+                gen_count += 1
+            elif i > 0:
+                prev_op = blocks[i - 1]['op'].split()[0]
+                prev_has_fallthrough = any(e['from'] == i - 1 and e['to'] == i for e in edges)
+                if prev_op in ('TERMINATE', 'TRANSFER') and not prev_has_fallthrough:
+                    starts_new = True
 
             if starts_new or current_seg is None:
-                title = b['label'] if b['label'] else (f"Входной поток ({b['op']})" if b['op'] == 'GENERATE' else f"Сегмент #{len(segments)+1}")
+                if base_op == 'GENERATE':
+                    title = f"Поток #{gen_count}" + (f" [{b['label']}]" if b['label'] else "")
+                elif b['label']:
+                    title = f"Подпрограмма [{b['label']}]"
+                else:
+                    title = f"Сегмент #{len(segments) + 1}"
+
                 current_seg = {
                     'id': len(segments),
                     'title': title,
                     'block_indices': []
                 }
                 segments.append(current_seg)
+
             current_seg['block_indices'].append(i)
 
         return blocks, edges, segments, labels
@@ -2796,28 +2831,29 @@ class GPSSBlockGraphicsItem(QGraphicsItem):
         super().mousePressEvent(event)
 
 class GPSSEdgeGraphicsItem(QGraphicsItem):
-    def __init__(self, start_pos, end_pos, edge_type="seq", label="", theme="dark", is_curve=False):
+    def __init__(self, points, edge_type="seq", label="", theme="dark"):
         super().__init__()
-        self.start_pos = start_pos
-        self.end_pos = end_pos
+        self.points = points
         self.edge_type = edge_type
         self.label = label
         self.theme = theme
-        self.is_curve = is_curve
         self.setZValue(1)
 
     def boundingRect(self):
-        extra = 40
-        min_x = min(self.start_pos.x(), self.end_pos.x()) - extra
-        max_x = max(self.start_pos.x(), self.end_pos.x()) + extra
-        min_y = min(self.start_pos.y(), self.end_pos.y()) - extra
-        max_y = max(self.start_pos.y(), self.end_pos.y()) + extra
-        return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+        if not self.points:
+            return QRectF()
+        xs = [p.x() for p in self.points]
+        ys = [p.y() for p in self.points]
+        m = 45
+        return QRectF(min(xs) - m, min(ys) - m, max(xs) - min(xs) + m * 2, max(ys) - min(ys) + m * 2)
 
     def paint(self, painter, option, widget=None):
+        if len(self.points) < 2:
+            return
+
         painter.setRenderHint(QPainter.Antialiasing)
         is_dark = (self.theme == "dark")
-        
+
         if self.edge_type in ("jump", "prob", "both"):
             line_color = QColor("#bcdfff" if is_dark else "#0969da")
             pen_style = Qt.SolidLine
@@ -2827,42 +2863,69 @@ class GPSSEdgeGraphicsItem(QGraphicsItem):
         else:
             line_color = QColor("#7a8c9e" if is_dark else "#8c959f")
             pen_style = Qt.SolidLine
-            
+
         pen = QPen(line_color, 1.5, pen_style)
         painter.setPen(pen)
-        
+
         path = QPainterPath()
-        path.moveTo(self.start_pos)
-        
-        if not self.is_curve:
-            path.lineTo(self.end_pos)
-            mid_pt = QPointF((self.start_pos.x() + self.end_pos.x()) / 2, (self.start_pos.y() + self.end_pos.y()) / 2)
-            angle = math.atan2(self.end_pos.y() - self.start_pos.y(), self.end_pos.x() - self.start_pos.x())
-        else:
-            c1 = QPointF(self.start_pos.x(), self.start_pos.y() + 45)
-            c2 = QPointF(self.end_pos.x(), self.end_pos.y() - 45)
-            path.cubicTo(c1, c2, self.end_pos)
-            mid_pt = path.pointAtPercent(0.5)
-            angle = math.atan2(self.end_pos.y() - c2.y(), self.end_pos.x() - c2.x())
-            
+        path.moveTo(self.points[0])
+
+        radius = 8.0
+        for i in range(1, len(self.points) - 1):
+            p_prev = self.points[i - 1]
+            p_curr = self.points[i]
+            p_next = self.points[i + 1]
+
+            v1 = p_curr - p_prev
+            len1 = math.hypot(v1.x(), v1.y())
+            v2 = p_next - p_curr
+            len2 = math.hypot(v2.x(), v2.y())
+
+            r = min(radius, len1 / 2.0, len2 / 2.0)
+            if r > 0.1 and len1 > 0 and len2 > 0:
+                p_start = p_curr - (v1 / len1) * r
+                p_end = p_curr + (v2 / len2) * r
+                path.lineTo(p_start)
+                path.quadTo(p_curr, p_end)
+            else:
+                path.lineTo(p_curr)
+
+        path.lineTo(self.points[-1])
         painter.drawPath(path)
-        
+
+        # Стрелочный наконечник
+        p_last = self.points[-1]
+        p_pre = self.points[-2]
+        angle = math.atan2(p_last.y() - p_pre.y(), p_last.x() - p_pre.x())
+
         arrow_size = 7
-        p1 = self.end_pos
-        p2 = self.end_pos - QPointF(arrow_size * math.cos(angle - math.pi / 6), arrow_size * math.sin(angle - math.pi / 6))
-        p3 = self.end_pos - QPointF(arrow_size * math.cos(angle + math.pi / 6), arrow_size * math.sin(angle + math.pi / 6))
-        
+        p1 = p_last
+        p2 = p_last - QPointF(arrow_size * math.cos(angle - math.pi / 6), arrow_size * math.sin(angle - math.pi / 6))
+        p3 = p_last - QPointF(arrow_size * math.cos(angle + math.pi / 6), arrow_size * math.sin(angle + math.pi / 6))
+
         painter.setBrush(QBrush(line_color))
         painter.drawPolygon(QPolygonF([p1, p2, p3]))
-        
+
+        # Отрисовка бейджа без наложения на стрелку
         if self.label:
             badge_text = self.label
             painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
             badge_bg = QColor("#1f2426" if is_dark else "#f6f8fa")
             badge_w = 40
             badge_h = 16
-            badge_rect = QRectF(mid_pt.x() - badge_w / 2, mid_pt.y() - badge_h / 2, badge_w, badge_h)
-            
+
+            is_purely_vertical = (len(self.points) == 2 and abs(self.points[0].x() - self.points[1].x()) < 1.0)
+            mid_pt = path.pointAtPercent(0.5)
+
+            if is_purely_vertical:
+                # Смещаем вправо от вертикальной оси — линия и наконечник остаются полностью видимыми
+                bx = mid_pt.x() + 8
+                by = mid_pt.y() - badge_h / 2
+            else:
+                bx = mid_pt.x() - badge_w / 2
+                by = mid_pt.y() - badge_h - 4
+
+            badge_rect = QRectF(bx, by, badge_w, badge_h)
             painter.setBrush(QBrush(badge_bg))
             painter.setPen(QPen(line_color, 1))
             painter.drawRoundedRect(badge_rect, 4, 4)
@@ -2956,41 +3019,24 @@ class GPSSFlowchartView(QGraphicsView):
 
         block_w = 210
         block_h = 66
-        v_gap = 26
-        h_gap = 60
+        v_gap = 38   # Увеличен зазор, чтобы стрелки и бейджи не слипались
+        h_gap = 75   # Достаточно места для двухсторонних коридоров между колонками
 
         block_items = {}
         block_positions = {}
 
         if self.layout_mode == "lanes":
             num_segs = len(segments)
-            cols = min(4, max(1, num_segs))
+            cols = num_segs  # Каждому логическому потоку — своя отдельная колонка
             col_x_offsets = []
-            cur_x = 30
+            cur_x = 35
             for c in range(cols):
                 col_x_offsets.append(cur_x)
                 cur_x += block_w + h_gap
 
-            lane_positions = {}
             for s_idx, seg in enumerate(segments):
-                c = s_idx % cols
-                r_lane = s_idx // cols
-                lane_positions[seg['id']] = (c, r_lane)
-
-            row_y_starts = [40]
-            for r in range(math.ceil(num_segs / cols)):
-                max_in_row = 0
-                for c in range(cols):
-                    s_id = r * cols + c
-                    if s_id < num_segs:
-                        max_in_row = max(max_in_row, len(segments[s_id]['block_indices']))
-                seg_h = 30 + max_in_row * (block_h + v_gap) + 50
-                row_y_starts.append(row_y_starts[-1] + seg_h)
-
-            for seg in segments:
-                c, r_lane = lane_positions[seg['id']]
-                bx = col_x_offsets[c]
-                by = row_y_starts[r_lane]
+                bx = col_x_offsets[s_idx]
+                by = 40
 
                 title_item = QGraphicsRectItem(bx, by, block_w, 24)
                 is_dark = (self.theme == "dark")
@@ -3003,7 +3049,7 @@ class GPSSFlowchartView(QGraphicsView):
                 txt_item.setDefaultTextColor(QColor("#bcdfff" if is_dark else "#0969da"))
                 txt_item.setPos(bx + 6, by + 1)
 
-                by += 32
+                by += 34
 
                 for b_idx in seg['block_indices']:
                     b = blocks[b_idx]
@@ -3014,9 +3060,8 @@ class GPSSFlowchartView(QGraphicsView):
                     item.setPos(bx, by)
                     self.scene.addItem(item)
                     block_items[b_idx] = item
-                    block_positions[b_idx] = (bx, by, c)
+                    block_positions[b_idx] = (bx, by, s_idx)
                     by += block_h + v_gap
-
         else:
             bx = 100
             by = 40
@@ -3031,6 +3076,7 @@ class GPSSFlowchartView(QGraphicsView):
                 block_positions[b_idx] = (bx, by, 0)
                 by += block_h + v_gap
 
+        # Построение маршрутов стрелок
         for e in edges:
             u, v = e['from'], e['to']
             if u not in block_positions or v not in block_positions:
@@ -3039,14 +3085,61 @@ class GPSSFlowchartView(QGraphicsView):
             ux, uy, uc = block_positions[u]
             vx, vy, vc = block_positions[v]
 
-            start_pos = QPointF(ux + block_w / 2, uy + block_h)
-            end_pos = QPointF(vx + block_w / 2, vy)
+            pts = []
 
-            is_curve = (uc != vc) or (abs(v - u) > 1) or (vy <= uy)
+            # 1. Прямой шаг вниз к следующему блоку в той же колонке
+            if uc == vc and v == u + 1 and vy > uy:
+                pts = [
+                    QPointF(ux + block_w / 2, uy + block_h),
+                    QPointF(vx + block_w / 2, vy)
+                ]
+
+            # 2. Обратный цикл вверх в той же колонке (например, TRANSFER ,MET1 или ,MET2)
+            elif uc == vc and vy <= uy:
+                # Огибаем слева по выделенному коридору и входим строго в левую грань блока (не трогая заголовок)
+                x_corridor = ux - 22
+                pts = [
+                    QPointF(ux, uy + block_h / 2),
+                    QPointF(x_corridor, uy + block_h / 2),
+                    QPointF(x_corridor, vy + block_h / 2),
+                    QPointF(vx, vy + block_h / 2)
+                ]
+
+            # 3. Прыжок вперед через блоки в той же колонке
+            elif uc == vc and v > u + 1:
+                x_corridor = ux + block_w + 22
+                pts = [
+                    QPointF(ux + block_w, uy + block_h / 2),
+                    QPointF(x_corridor, uy + block_h / 2),
+                    QPointF(x_corridor, vy + block_h / 2),
+                    QPointF(vx + block_w, vy + block_h / 2)
+                ]
+
+            # 4. Переход в правую колонку (например, ветка 5% в подпрограмму JUMP)
+            elif uc < vc:
+                # Выходим справа, идем по межколоночному коридору и входим в левую грань целевого блока
+                x_channel = (ux + block_w + vx) / 2
+                pts = [
+                    QPointF(ux + block_w, uy + block_h / 2),
+                    QPointF(x_channel, uy + block_h / 2),
+                    QPointF(x_channel, vy + block_h / 2),
+                    QPointF(vx, vy + block_h / 2)
+                ]
+
+            # 5. Возврат из правой колонки в левую (например, возврат из JUMP в MET2)
+            else:
+                # Выходим слева, идем по коридору со смещением и входим в правую грань блока MET2
+                x_channel = (vx + block_w + ux) / 2
+                pts = [
+                    QPointF(ux, uy + block_h / 2),
+                    QPointF(x_channel, uy + block_h / 2),
+                    QPointF(x_channel, vy + block_h / 2),
+                    QPointF(vx + block_w, vy + block_h / 2)
+                ]
 
             edge_item = GPSSEdgeGraphicsItem(
-                start_pos, end_pos, edge_type=e['type'],
-                label=e['label'], theme=self.theme, is_curve=is_curve
+                pts, edge_type=e['type'],
+                label=e['label'], theme=self.theme
             )
             self.scene.addItem(edge_item)
 
@@ -5527,7 +5620,7 @@ if __name__ == "__main__":
     if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("sl1dee36.gpssstudio.ide.1.6.0")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("sl1dee36.gpssstudio.ide.1.6.1")
         except Exception:
             pass
 
