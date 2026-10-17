@@ -25,7 +25,7 @@ class ConfigManager:
             "target_os": "windows" if is_win else "linux",
             "executable_path": default_exe,
             "use_dos_emulation": False,
-            "dos_executable_path": '',
+            "dos_executable_path": r'C:\Program Files (x86)\DOSBox-0.74-3\DOSBox.exe',
             "dos_mount_path": '',
             "dos_abort_after_execution": True,
             "theme": "dark",
