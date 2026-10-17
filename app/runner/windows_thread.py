@@ -4,11 +4,14 @@ import signal
 import subprocess
 import sys
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Signal
+
+from app.runner.abc_thread import ISimulationThread
 
 
-class GPSSSimulationThread(QThread):
-    simulation_finished = Signal(bool, int, str, str, str, str)  # (success, retcode, stdout, stderr, lis_text, err_msg)
+class WindowsSimulationThread(ISimulationThread):
+    # (success, retcode, stdout, stderr, lis_text, err_msg)
+    simulation_finished = Signal(bool, int, str, str, str, str)
     status_updated = Signal(str)
 
     def __init__(self, exe_path, work_dir, gps_file, lis_file, target_os="windows", parent=None):

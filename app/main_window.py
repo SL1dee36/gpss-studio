@@ -26,7 +26,8 @@ from app.editor.search_bar import SearchBar
 from app.flowchart.widget import GPSSFlowchartWidget
 from app.parsing.analysis import analyze_device_grouping
 from app.parsing.listing import GPSSListingParser
-from app.simulation import GPSSSimulationThread
+from app.runner.dos_runner import DosRunner
+from app.runner.windows_runner import WindowsRunner
 from app.style.dark import STYLE_SHEET_DARK
 from app.style.light import STYLE_SHEET_LIGHT
 from app.util import get_monospace_font, get_ui_font, filter_table
@@ -48,14 +49,7 @@ class GPSSStudio(QMainWindow):
         self.theme = self.config.get("theme", "dark")
         self.target_os = self.config.get("target_os", "windows" if sys.platform == "win32" else "linux")
         self.work_dir = self.config.get("work_dir", self.current_dir)
-        self.exe_path = self.config.get("executable_path", "")
-        if not os.path.exists(self.exe_path):
-            exe_name = "gpssh.exe" if self.target_os == "windows" else "gpssh"
-            self.exe_path = get_resource_path(exe_name)
-            if not os.path.exists(self.exe_path):
-                which_p = shutil.which(exe_name) or shutil.which("gpssh") or shutil.which("gpssh.exe")
-                if which_p:
-                    self.exe_path = which_p
+        self.runner = self.get_runner()
         self.show_line_numbers = self.config.get("show_line_numbers", False)
         self.zoom_level = self.config.get("zoom", 100)
 
@@ -101,6 +95,13 @@ class GPSSStudio(QMainWindow):
                 self._parse_and_fill_summary(lis_text)
             except Exception:
                 pass
+
+    def get_runner(self):
+        dos_mode = self.config.get("use_dos_emulation", False)
+        if not dos_mode:
+            return WindowsRunner(self.config, self.target_os)
+        else:
+            return DosRunner(self.config, self.target_os)
 
     def apply_theme(self, theme):
         self.theme = theme
@@ -197,7 +198,7 @@ class GPSSStudio(QMainWindow):
         self.btn_run.setObjectName("btn_run")
         self.btn_run.setFixedHeight(32)
         self.btn_run.setFocusPolicy(Qt.NoFocus)
-        self.btn_run.clicked.connect(self.run_simulation)
+        self.btn_run.clicked.connect(self.run_stop_simulation_button)
 
         self.btn_reset = QPushButton("Сбросить")
         self.btn_reset.setObjectName("btn_reset")
@@ -542,7 +543,7 @@ class GPSSStudio(QMainWindow):
             self.lbl_hdr_label.setFixedWidth(self.editor.gutter_width())
 
     def _setup_shortcuts(self):
-        QShortcut(QKeySequence("F5"), self, self.run_simulation)
+        QShortcut(QKeySequence("F5"), self, self.run_stop_simulation_button)
         QShortcut(QKeySequence("Ctrl+G"), self, self._go_to_line)
         QShortcut(QKeySequence("Ctrl+F"), self, self._handle_find_shortcut)
         QShortcut(QKeySequence("Ctrl+N"), self, self.new_file)
@@ -795,9 +796,8 @@ class GPSSStudio(QMainWindow):
             self.tabs.setCurrentIndex(0)
 
     def reset_model(self):
-        if hasattr(self, "sim_thread") and self.sim_thread and self.sim_thread.isRunning():
-            self.sim_thread.cancel()
-            self.sim_thread.wait(1000)
+        self.runner.enshure_stop()
+
         self.editor.load_code(DEFAULT_TEMPLATE)
         self.current_file_path = None
         self.editor.document().setModified(False)
@@ -825,14 +825,8 @@ class GPSSStudio(QMainWindow):
 
     def _apply_config(self):
         self.target_os = self.config.get("target_os", "windows" if sys.platform == "win32" else "linux")
-        self.exe_path = self.config.get("executable_path", "")
-        if not os.path.exists(self.exe_path):
-            exe_name = "gpssh.exe" if self.target_os == "windows" else "gpssh"
-            self.exe_path = get_resource_path(exe_name)
-            if not os.path.exists(self.exe_path):
-                which_p = shutil.which(exe_name) or shutil.which("gpssh") or shutil.which("gpssh.exe")
-                if which_p:
-                    self.exe_path = which_p
+        self.runner = self.get_runner()
+
         self.work_dir = self.config.get("work_dir", self.current_dir)
         self.theme = self.config.get("theme", "dark")
         self.show_line_numbers = self.config.get("show_line_numbers", False)
@@ -850,10 +844,10 @@ class GPSSStudio(QMainWindow):
         self.lbl_status_os.setText(f"ОС: {'Windows' if self.target_os == 'windows' else 'Linux'}")
         self.apply_theme(self.theme)
 
+    # Кнопка "Закрыть"
     def closeEvent(self, event):
-        if hasattr(self, "sim_thread") and self.sim_thread and self.sim_thread.isRunning():
-            self.sim_thread.cancel()
-            self.sim_thread.wait(1500)
+
+        self.runner.enshure_stop()
 
         if self.editor.document().isModified():
             res = QMessageBox.question(
@@ -871,37 +865,29 @@ class GPSSStudio(QMainWindow):
                 return
         event.accept()
 
-    def run_simulation(self):
-        if hasattr(self, "sim_thread") and self.sim_thread and self.sim_thread.isRunning():
+    def run_stop_simulation_button(self):
+        if self.runner.is_running():
             self.stop_simulation()
         else:
             self.start_simulation()
 
     def stop_simulation(self):
-        if hasattr(self, "sim_thread") and self.sim_thread and self.sim_thread.isRunning():
+        if self.runner.is_running():
             self.lbl_status_msg.setText("Остановка симуляции...")
             self.btn_run.setEnabled(False)
-            self.sim_thread.cancel()
+            self.runner.enshure_stop()
+
+    def verify_exe_path(self):
+        is_valid = self.runner.validate_runner_path()
+        if not is_valid:
+            QMessageBox.critical(self, "Ошибка", self.runner.get_failed_path_msg())
+            return False
+        return True
 
     def start_simulation(self):
         # Validate executable path with fallbacks
-        if not os.path.exists(self.exe_path):
-            exe_name = "gpssh.exe" if self.target_os == "windows" else "gpssh"
-            fallback = shutil.which(self.exe_path) or shutil.which(exe_name) or shutil.which("gpssh") or shutil.which("gpssh.exe") or get_resource_path(exe_name)
-            if fallback and os.path.exists(fallback):
-                self.exe_path = fallback
-            else:
-                extra_hint = ""
-                if sys.platform != "win32" and self.exe_path.lower().endswith(".exe"):
-                    if not shutil.which("wine"):
-                        extra_hint = "\n\nПодсказка для Linux: запуск Windows .exe требует установленного Wine (apt install wine)."
-                QMessageBox.critical(
-                    self, "Ошибка",
-                    f"Исполняемый файл GPSS не найден!\n\nПуть: {self.exe_path}\n"
-                    f"Целевая ОС: {'Windows' if self.target_os == 'windows' else 'Linux'}\n\n"
-                    f"Укажите правильный путь в настройках (кнопка 'menu' -> Настройки).{extra_hint}"
-                )
-                return
+        if not self.verify_exe_path():
+            return
 
         if not os.path.exists(self.work_dir):
             try:
@@ -945,14 +931,10 @@ class GPSSStudio(QMainWindow):
         self.btn_reset.setEnabled(False)
         self.lbl_status_msg.setText("Запуск симуляции GPSS/H...")
 
-        # Start simulation in background QThread
-        self.sim_thread = GPSSSimulationThread(
-            self.exe_path, self.work_dir, self.gps_file, self.lis_file,
-            target_os=self.target_os, parent=self
+        self.runner.run_gps(
+            self.work_dir, self.gps_file, self.lis_file, self,
+            self._on_simulation_status, self._on_simulation_finished
         )
-        self.sim_thread.status_updated.connect(self._on_simulation_status)
-        self.sim_thread.simulation_finished.connect(self._on_simulation_finished)
-        self.sim_thread.start()
 
     def _on_simulation_status(self, msg):
         self.lbl_status_msg.setText(msg)
@@ -968,6 +950,15 @@ class GPSSStudio(QMainWindow):
 
         # Update console output
         console_out = f"STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}"
+        if self.config.get("use_dos_emulation"):
+            dos_warn_msg = f'!!! ВНИМАНИЕ !!!\n\n' \
+                           f'Вы запущены в режиме DOS-эмулятора\n' \
+                           f'По широкому спектру причин(всё очень старое) получить ' \
+                           f'вывод с консоли DOS-эмулятора НЕ ПОЛУЧИТСЯ\n' \
+                           f'Чтобы проверить вывод эмулятора - переключите в настройках ' \
+                           f'"Закрывать эмулятор DOS после выполнения"\n\n' \
+                           f'!!! ВНИМАНИЕ !!!\n\n'
+            console_out = dos_warn_msg + console_out
         if err_msg:
             console_out += f"\n\nСИСТЕМНОЕ СООБЩЕНИЕ:\n{err_msg}"
         self.console_viewer.setPlainText(console_out)
@@ -988,7 +979,6 @@ class GPSSStudio(QMainWindow):
             short_err = err_msg.split("\n")[0] if err_msg else "Ошибка запуска"
             self.lbl_status_msg.setText(f"Ошибка: {short_err}")
             QMessageBox.warning(self, "Результат симуляции", err_msg or "Произошла ошибка при выполнении модели.")
-
 
     def _populate_key_value_table(self, table, data):
         table.setRowCount(len(data))

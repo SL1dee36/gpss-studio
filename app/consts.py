@@ -22,6 +22,7 @@ GPSS_CORE_KEYWORDS = set(GPSS_KEYWORDS + GPSS_DIRECTIVES)
 DEFAULT_TEMPLATE = """"""
 CODE_VAR_16 = DEFAULT_TEMPLATE
 GITHUB_URL = "https://github.com/SL1dee36/gpss-studio"
+DOS_GPSSH_URL = "http://old-dos.ru/index.php?page=files&mode=files&do=show&id=6079"
 BLOCK_COLORS_DARK = {
     'GENERATE': QColor('#238636'),
     'TERMINATE': QColor('#da3633'),

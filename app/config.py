@@ -24,6 +24,10 @@ class ConfigManager:
         defaults = {
             "target_os": "windows" if is_win else "linux",
             "executable_path": default_exe,
+            "use_dos_emulation": False,
+            "dos_executable_path": '',
+            "dos_mount_path": '',
+            "dos_abort_after_execution": True,
             "theme": "dark",
             "work_dir": app_dir,
             "show_line_numbers": False,
