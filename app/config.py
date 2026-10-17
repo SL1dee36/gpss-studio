@@ -57,6 +57,8 @@ class ConfigManager:
         if not os.path.exists(defaults.get("work_dir", "")):
             defaults["work_dir"] = app_dir
 
+        cls.save(defaults)
+
         return defaults
 
     @classmethod
