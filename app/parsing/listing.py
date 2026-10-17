@@ -26,104 +26,108 @@ class GPSSListingParser:
         for idx, line in enumerate(self.lines):
             line_no = idx + 1
             s = line.strip()
+            # Создаем верхнерегистровую копию для проверок
+            line_upper = line.upper()
+            s_upper = s.upper()
 
-            if "GPSS/H Release" in line and not self.header_info:
-                m_ver = re.search(r"GPSS/H\s+Release\s+([^\s]+(?:\s*\([^\)]+\))?)", line)
+            if "GPSS/H RELEASE" in line_upper and not self.header_info:
+                # Для регулярки используем флаг IGNORECASE
+                m_ver = re.search(r"GPSS/H\s+Release\s+([^\s]+(?:\s*\([^\)]+\))?)", line, re.IGNORECASE)
                 ver = m_ver.group(1) if m_ver else "GPSS/H"
-                m_file = re.search(r"File:\s*([^\s]+)", line)
+                m_file = re.search(r"File:\s*([^\s]+)", line, re.IGNORECASE)
                 f_name = m_file.group(1) if m_file else ""
                 self.header_info = {"version": ver, "file": f_name, "line_no": line_no}
 
-            if "Relative Clock:" in line:
-                m_rel = re.search(r"Relative Clock:\s*([\d\.]+)", line)
-                m_abs = re.search(r"Absolute Clock:\s*([\d\.]+)", line)
+            if "RELATIVE CLOCK:" in line_upper:
+                m_rel = re.search(r"Relative Clock:\s*([\d\.]+)", line, re.IGNORECASE)
+                m_abs = re.search(r"Absolute Clock:\s*([\d\.]+)", line, re.IGNORECASE)
                 self.clocks["relative"] = m_rel.group(1) if m_rel else "0.0"
                 self.clocks["absolute"] = m_abs.group(1) if m_abs else "0.0"
                 self.clocks["line_no"] = line_no
 
-            if "Simulation complete." in line:
-                m_abs = re.search(r"Absolute Clock:\s*([\d\.]+)", line)
+            if "SIMULATION COMPLETE." in line_upper:
+                m_abs = re.search(r"Absolute Clock:\s*([\d\.]+)", line, re.IGNORECASE)
                 if m_abs:
                     self.clocks["absolute"] = m_abs.group(1)
                     if "line_no" not in self.clocks:
                         self.clocks["line_no"] = line_no
 
-            if "Total Block Executions:" in line:
-                m = re.search(r"Total Block Executions:\s*(\d+)", line)
+            if "TOTAL BLOCK EXECUTIONS:" in line_upper:
+                m = re.search(r"Total Block Executions:\s*(\d+)", line, re.IGNORECASE)
                 if m:
                     self.execution_stats["total_blocks"] = m.group(1)
                     self.execution_stats["line_no"] = line_no
-            if "Blocks / second:" in line:
-                m = re.search(r"Blocks\s*/\s*second:\s*([\d\.]+)", line)
+            if "BLOCKS / SECOND:" in line_upper:
+                m = re.search(r"Blocks\s*/\s*second:\s*([\d\.]+)", line, re.IGNORECASE)
                 if m:
                     self.execution_stats["blocks_per_sec"] = m.group(1)
-            if "Microseconds / Block:" in line:
-                m = re.search(r"Microseconds\s*/\s*Block:\s*([\d\.]+)", line)
+            if "MICROSECONDS / BLOCK:" in line_upper:
+                m = re.search(r"Microseconds\s*/\s*Block:\s*([\d\.]+)", line, re.IGNORECASE)
                 if m:
                     self.execution_stats["us_per_block"] = m.group(1)
 
-            if "Control Statements" in line and "Blocks" not in line:
-                m = re.search(r"Control Statements\s+(\d+)", line)
+            if "CONTROL STATEMENTS" in line_upper and "BLOCKS" not in line_upper:
+                m = re.search(r"Control Statements\s+(\d+)", line, re.IGNORECASE)
                 if m:
                     self.model_size["control_statements"] = m.group(1)
                     self.model_size["line_no"] = line_no
-            if re.match(r"^\s*Blocks\s+\d+", line):
-                m = re.search(r"Blocks\s+(\d+)", line)
+            if re.match(r"^\s*BLOCKS\s+\d+", line_upper):
+                m = re.search(r"Blocks\s+(\d+)", line, re.IGNORECASE)
                 if m:
                     self.model_size["blocks"] = m.group(1)
                     if "line_no" not in self.model_size:
                         self.model_size["line_no"] = line_no
 
-            if "Compiled Code:" in line:
-                m = re.search(r"Compiled Code:\s*(\d+)", line)
+            if "COMPILED CODE:" in line_upper:
+                m = re.search(r"Compiled Code:\s*(\d+)", line, re.IGNORECASE)
                 if m:
                     self.storage_requirements["compiled_code"] = m.group(1)
                     self.storage_requirements["line_no"] = line_no
-            if "Compiled Data:" in line:
-                m = re.search(r"Compiled Data:\s*(\d+)", line)
+            if "COMPILED DATA:" in line_upper:
+                m = re.search(r"Compiled Data:\s*(\d+)", line, re.IGNORECASE)
                 if m:
                     self.storage_requirements["compiled_data"] = m.group(1)
-            if "Entities:" in line and "Dictionary" not in line:
-                m = re.search(r"Entities:\s*(\d+)", line)
+            if "ENTITIES:" in line_upper and "DICTIONARY" not in line_upper:
+                m = re.search(r"Entities:\s*(\d+)", line, re.IGNORECASE)
                 if m:
                     self.storage_requirements["entities"] = m.group(1)
-            if "Common:" in line:
-                m = re.search(r"Common:\s*(\d+)", line)
+            if "COMMON:" in line_upper:
+                m = re.search(r"Common:\s*(\d+)", line, re.IGNORECASE)
                 if m:
                     self.storage_requirements["common"] = m.group(1)
-            if re.match(r"^\s*Total:\s*\d+", line):
-                m = re.search(r"Total:\s*(\d+)", line)
+            if re.match(r"^\s*TOTAL:\s*\d+", line_upper):
+                m = re.search(r"Total:\s*(\d+)", line, re.IGNORECASE)
                 if m:
                     self.storage_requirements["total"] = m.group(1)
 
-            if "bytes available" in line:
-                m = re.search(r"(\d+)\s+bytes available", line)
+            if "BYTES AVAILABLE" in line_upper:
+                m = re.search(r"(\d+)\s+bytes available", line, re.IGNORECASE)
                 if m:
                     self.common_storage["available"] = m.group(1)
                     self.common_storage["line_no"] = line_no
-            if "in use" in line:
-                m = re.search(r"(\d+)\s+in use", line)
+            if "IN USE" in line_upper:
+                m = re.search(r"(\d+)\s+in use", line, re.IGNORECASE)
                 if m:
                     self.common_storage["in_use"] = m.group(1)
-            if "used (max)" in line:
-                m = re.search(r"(\d+)\s+used \(max\)", line)
+            if "USED (MAX)" in line_upper:
+                m = re.search(r"(\d+)\s+used \(max\)", line, re.IGNORECASE)
                 if m:
                     self.common_storage["max_used"] = m.group(1)
 
-            if "Facility" in line and ("Total" in line or "Avail" in line):
+            if "FACILITY" in line_upper and ("TOTAL" in line_upper or "AVAIL" in line_upper):
                 state = "facility_hdr"
                 continue
             if state == "facility_hdr":
-                if "Time" in line or "Status" in line:
+                if "TIME" in line_upper or "STATUS" in line_upper:
                     state = "facilities"
                     continue
                 state = None
 
             if state == "facilities":
-                if not s or s.startswith("\x0c") or any(k in line for k in ["Queue", "Storage", "Random", "Status of", "Relative Clock", "Simulation"]):
+                if not s or s.startswith("\x0c") or any(k in line_upper for k in ["QUEUE", "STORAGE", "RANDOM", "STATUS OF", "RELATIVE CLOCK", "SIMULATION"]):
                     state = None
                 else:
-                    name = line[0:10].strip()
+                    name = line[0:10].strip() # Используем оригинальную line
                     if name and not name.startswith("-"):
                         self.facilities.append({
                             "line_no": line_no,
@@ -139,17 +143,17 @@ class GPSSListingParser:
                             "preempting": line[85:95].strip() if len(line) > 85 else ""
                         })
 
-            if "Queue" in line and ("Maximum" in line or "Average" in line):
+            if "QUEUE" in line_upper and ("MAXIMUM" in line_upper or "AVERAGE" in line_upper):
                 state = "queue_hdr"
                 continue
             if state == "queue_hdr":
-                if "Contents" in line or "Entries" in line:
+                if "CONTENTS" in line_upper or "ENTRIES" in line_upper:
                     state = "queues"
                     continue
                 state = None
 
             if state == "queues":
-                if not s or s.startswith("\x0c") or any(k in line for k in ["Facility", "Storage", "Random", "Status of", "Relative Clock", "Simulation"]):
+                if not s or s.startswith("\x0c") or any(k in line_upper for k in ["FACILITY", "STORAGE", "RANDOM", "STATUS OF", "RELATIVE CLOCK", "SIMULATION"]):
                     state = None
                 else:
                     name = line[0:10].strip()
@@ -168,17 +172,17 @@ class GPSSListingParser:
                             "cur_c": line[107:].strip() if len(line) > 107 else ""
                         })
 
-            if "Storage" in line and ("Capacity" in line or "Average" in line or "Avg-Util" in line):
+            if "STORAGE" in line_upper and ("CAPACITY" in line_upper or "AVERAGE" in line_upper or "AVG-UTIL" in line_upper):
                 state = "storage_hdr"
                 continue
             if state == "storage_hdr":
-                if "Contents" in line or "Time" in line or "Status" in line:
+                if "CONTENTS" in line_upper or "TIME" in line_upper or "STATUS" in line_upper:
                     state = "storages"
                     continue
                 state = None
 
             if state == "storages":
-                if not s or s.startswith("\x0c") or any(k in line for k in ["Facility", "Queue", "Random", "Status of", "Relative Clock", "Simulation"]):
+                if not s or s.startswith("\x0c") or any(k in line_upper for k in ["FACILITY", "QUEUE", "RANDOM", "STATUS OF", "RELATIVE CLOCK", "SIMULATION"]):
                     state = None
                 else:
                     name = line[0:10].strip()
@@ -199,12 +203,13 @@ class GPSSListingParser:
                             "max_contents": line[112:].strip() if len(line) > 112 else ""
                         })
 
-            if "Block Current     Total" in line:
+            if "BLOCK CURRENT     TOTAL" in line_upper:
                 state = "blocks"
-                block_col_pos = [m.start() for m in re.finditer(r"Block", line)]
+                # Ищем позиции слова BLOCK в верхнем регистре, но режем оригинальную строку
+                block_col_pos = [m.start() for m in re.finditer(r"BLOCK", line_upper)]
                 continue
             if state == "blocks":
-                if not s or s.startswith("\x0c") or any(k in line for k in ["Facility", "Storage", "Queue", "Random", "Status of", "Relative Clock", "Simulation"]):
+                if not s or s.startswith("\x0c") or any(k in line_upper for k in ["FACILITY", "STORAGE", "QUEUE", "RANDOM", "STATUS OF", "RELATIVE CLOCK", "SIMULATION"]):
                     state = None
                 else:
                     for p in block_col_pos:
@@ -212,7 +217,7 @@ class GPSSListingParser:
                         if not chunk.strip():
                             continue
                         blk = chunk[:12].strip()
-                        if not blk or blk == "Block":
+                        if not blk or blk.upper() == "BLOCK":
                             continue
                         cur = chunk[12:18].strip() or "0"
                         tot = chunk[18:].strip()
@@ -223,16 +228,16 @@ class GPSSListingParser:
                             "total": tot
                         })
 
-            if "Random    Antithetic" in line:
+            if "RANDOM    ANTITHETIC" in line_upper:
                 state = "random_hdr"
                 continue
             if state == "random_hdr":
-                if "Stream" in line or "Variates" in line:
+                if "STREAM" in line_upper or "VARIATES" in line_upper:
                     state = "random"
                     continue
                 state = None
             if state == "random":
-                if not s or s.startswith("\x0c") or any(k in line for k in ["Status of", "Simulation", "Facility", "Queue", "Storage"]):
+                if not s or s.startswith("\x0c") or any(k in line_upper for k in ["STATUS OF", "SIMULATION", "FACILITY", "QUEUE", "STORAGE"]):
                     state = None
                 else:
                     parts = line.split()
