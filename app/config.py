@@ -16,6 +16,7 @@ class ConfigManager:
 
     @classmethod
     def load(cls):
+        needs_saving = False
         app_dir = get_app_dir()
         is_win = sys.platform == "win32"
         exe_name = "gpssh.exe" if is_win else "gpssh"
@@ -31,7 +32,9 @@ class ConfigManager:
             "theme": "dark",
             "work_dir": app_dir,
             "show_line_numbers": False,
-            "zoom": 100
+            "zoom": 100,
+
+            "last_opened_file": ""
         }
 
         path = cls.get_config_path()
@@ -42,10 +45,13 @@ class ConfigManager:
                 defaults.update(data)
             except Exception:
                 pass
+        else:
+            needs_saving = True
 
         # Если путь к исполняемому файлу из настроек не существует, пробуем fallback
         if not os.path.exists(defaults.get("executable_path", "")):
             candidate = get_resource_path(exe_name)
+            needs_saving = True
             if os.path.exists(candidate):
                 defaults["executable_path"] = candidate
             else:
@@ -55,9 +61,11 @@ class ConfigManager:
 
         # Если рабочая папка не существует, сбрасываем на папку приложения
         if not os.path.exists(defaults.get("work_dir", "")):
+            needs_saving = True
             defaults["work_dir"] = app_dir
 
-        cls.save(defaults)
+        if needs_saving:
+            cls.save(defaults)
 
         return defaults
 

@@ -66,20 +66,7 @@ class GPSSStudio(QMainWindow):
         self._setup_shortcuts()
         self._update_window_title()
 
-        if os.path.exists(self.gps_file):
-            try:
-                with open(self.gps_file, "r", encoding="utf-8", errors="replace") as f:
-                    c = f.read()
-                if c.strip():
-                    self.editor.load_code(c)
-                    self.current_file_path = self.gps_file
-                else:
-                    self.editor.load_code(DEFAULT_TEMPLATE)
-            except Exception:
-                self.editor.load_code(DEFAULT_TEMPLATE)
-        else:
-            self.editor.load_code(DEFAULT_TEMPLATE)
-
+        self.load_startup_file()
         self._refresh_flowchart_from_editor()
 
         if os.path.exists(self.lis_file):
@@ -95,6 +82,33 @@ class GPSSStudio(QMainWindow):
                 self._parse_and_fill_summary(lis_text)
             except Exception:
                 pass
+
+    def load_startup_file(self):
+        last_opened = self.config.get("last_opened_file")
+        if os.path.exists(last_opened):
+            try:
+                with open(last_opened, "r", encoding="utf-8", errors="replace") as f:
+                    c = f.read()
+                if c.strip():
+                    self.editor.load_code(c)
+                    self.current_file_path = last_opened
+                    return
+            except Exception:
+                pass
+
+        if os.path.exists(self.gps_file):
+            try:
+                with open(self.gps_file, "r", encoding="utf-8", errors="replace") as f:
+                    c = f.read()
+                if c.strip():
+                    self.editor.load_code(c)
+                    self.current_file_path = self.gps_file
+                else:
+                    self.editor.load_code(DEFAULT_TEMPLATE)
+            except Exception:
+                self.editor.load_code(DEFAULT_TEMPLATE)
+        else:
+            self.editor.load_code(DEFAULT_TEMPLATE)
 
     def get_runner(self):
         dos_mode = self.config.get("use_dos_emulation", False)
@@ -711,7 +725,7 @@ class GPSSStudio(QMainWindow):
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Открыть модель GPSS",
-            self.work_dir,
+            os.path.dirname(self.current_file_path),
             "Модели GPSS (*.gps *.txt *.dat);;Все файлы (*.*)"
         )
         if not path:
@@ -728,6 +742,8 @@ class GPSSStudio(QMainWindow):
         self.editor.load_code(content)
         self.editor.document().setModified(False)
         self._update_window_title()
+        self.config["last_opened_file"] = self.current_file_path
+        ConfigManager.save(self.config)
         self.lbl_status_msg.setText(f"Открыт файл: {os.path.basename(path)}")
 
     def save_file(self):
@@ -738,12 +754,18 @@ class GPSSStudio(QMainWindow):
     def save_file_as(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Сохранить модель как...",
-            self.work_dir,
+            os.path.dirname(self.current_file_path),
             "Модели GPSS (*.gps);;Все файлы (*.*)"
         )
         if not path:
             return False
-        return self._do_save(path)
+        is_saved = self._do_save(path)
+
+        if is_saved:
+            self.config["last_opened_file"] = self.current_file_path
+            ConfigManager.save(self.config)
+
+        return is_saved
 
     def _do_save(self, path):
         code = self.editor.get_formatted_code(target_os=self.target_os)
