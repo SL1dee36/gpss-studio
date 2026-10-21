@@ -71,6 +71,10 @@ class SettingsDialog(QDialog):
         self.chk_lines.setChecked(self.config.get("show_line_numbers", False))
         layout_common.addRow("Нумерация строк:", self.chk_lines)
 
+        self.chk_switch_tab = QCheckBox("Переключаться на первую вкладку после симуляции")
+        self.chk_switch_tab.setChecked(self.config.get("switch_to_first_tab_after_simulating", False))
+        layout_common.addRow("Информация:", self.chk_switch_tab)
+
         layout.addWidget(group_common)
 
         form_top = QFormLayout()
@@ -237,6 +241,7 @@ class SettingsDialog(QDialog):
         self.config["work_dir"] = self.edit_work_dir.text().strip()
         self.config["theme"] = "dark" if self.combo_theme.currentIndex() == 0 else "light"
         self.config["show_line_numbers"] = self.chk_lines.isChecked()
+        self.config["switch_to_first_tab_after_simulating"] = self.chk_switch_tab.isChecked()
 
         try:
             zoom_str = self.combo_zoom.currentText().replace("%", "").strip()

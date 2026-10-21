@@ -989,7 +989,8 @@ class GPSSStudio(QMainWindow):
             self.lis_viewer.setPlainText(lis_text)
             self._parse_and_fill_summary(lis_text)
             self._refresh_flowchart_from_editor()
-            self.tabs.setCurrentIndex(0)
+            if self.config.get("switch_to_first_tab_after_simulating", False):
+                self.tabs.setCurrentIndex(0)
             self.lbl_status_msg.setText("Симуляция успешно завершена")
         else:
             if lis_text:

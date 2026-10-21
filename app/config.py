@@ -32,6 +32,7 @@ class ConfigManager:
             "theme": "dark",
             "work_dir": app_dir,
             "show_line_numbers": False,
+            "switch_to_first_tab_after_simulating": False,
             "zoom": 100,
 
             "last_opened_file": ""
