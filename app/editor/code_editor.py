@@ -4,7 +4,7 @@ from PySide6.QtWidgets import QPlainTextEdit, QTextEdit
 
 from app.consts import GPSS_CORE_KEYWORDS
 from app.editor.highlighter import GPSSHighlighter
-from app.editor.lable_gutter import LabelGutter
+from app.editor.label_gutter import LabelGutter
 from app.widgets.text import BlockUserData
 
 

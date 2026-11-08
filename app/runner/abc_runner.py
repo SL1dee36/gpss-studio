@@ -17,7 +17,7 @@ class IRunner(ABC):
         ...
 
     @abstractmethod
-    def enshure_stop(self):
+    def ensure_stop(self):
         ...
 
     @abstractmethod

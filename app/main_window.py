@@ -725,7 +725,7 @@ class GPSSStudio(QMainWindow):
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Открыть модель GPSS",
-            os.path.dirname(self.current_file_path) if self.current_file_path else get_app_dir(),
+            os.path.dirname(self.current_file_path) if self.current_file_path else self.work_dir,
             "Модели GPSS (*.gps *.txt *.dat);;Все файлы (*.*)"
         )
         if not path:
@@ -754,7 +754,7 @@ class GPSSStudio(QMainWindow):
     def save_file_as(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Сохранить модель как...",
-            os.path.dirname(self.current_file_path) if self.current_file_path else get_app_dir(),
+            os.path.dirname(self.current_file_path) if self.current_file_path else self.work_dir,
             "Модели GPSS (*.gps);;Все файлы (*.*)"
         )
         if not path:
@@ -818,7 +818,7 @@ class GPSSStudio(QMainWindow):
             self.tabs.setCurrentIndex(0)
 
     def reset_model(self):
-        self.runner.enshure_stop()
+        self.runner.ensure_stop()
 
         self.editor.load_code(DEFAULT_TEMPLATE)
         self.current_file_path = None
@@ -869,7 +869,7 @@ class GPSSStudio(QMainWindow):
     # Кнопка "Закрыть"
     def closeEvent(self, event):
 
-        self.runner.enshure_stop()
+        self.runner.ensure_stop()
 
         if self.editor.document().isModified():
             res = QMessageBox.question(
@@ -897,7 +897,7 @@ class GPSSStudio(QMainWindow):
         if self.runner.is_running():
             self.lbl_status_msg.setText("Остановка симуляции...")
             self.btn_run.setEnabled(False)
-            self.runner.enshure_stop()
+            self.runner.ensure_stop()
 
     def verify_exe_path(self):
         is_valid = self.runner.validate_runner_path()

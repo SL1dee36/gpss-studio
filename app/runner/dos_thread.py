@@ -44,7 +44,7 @@ class DosBoxSimulationThread(ISimulationThread):
 
         # Удаляем старый lis файл, чтобы не подхватить его в случае ошибки
         if os.path.exists(dosbox_lis_file):
-            os.remove(os.path.join(self.mount_path, dosbox_lis_file))
+            os.remove(dosbox_lis_file)
 
         # Команды для выполнения внутри DOSBox
         commands = [

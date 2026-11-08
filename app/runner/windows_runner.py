@@ -70,7 +70,7 @@ class WindowsRunner(IRunner):
         if self.thread and self.is_running():
             self.thread.cancel()
 
-    def enshure_stop(self):
+    def ensure_stop(self):
         if self.thread and self.is_running():
             self.thread.cancel()
             self.thread.wait(1500)
