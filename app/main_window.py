@@ -64,9 +64,9 @@ class GPSSStudio(QMainWindow):
         self._build_ui()
         self.apply_theme(self.theme)
         self._setup_shortcuts()
-        self._update_window_title()
 
         self.load_startup_file()
+        self._update_window_title()
         self._refresh_flowchart_from_editor()
 
         if os.path.exists(self.lis_file):
