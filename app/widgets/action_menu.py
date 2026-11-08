@@ -26,6 +26,7 @@ class ActionMenuPopup(QFrame):
             return btn
 
         add_item("Новый  (Ctrl+N)", self.main_window.new_file)
+        add_item("Шаблоны моделей...", self.main_window.open_templates)
         add_item("Открыть...  (Ctrl+O)", self.main_window.open_file)
         add_item("Сохранить  (Ctrl+S)", self.main_window.save_file)
         add_item("Сохранить как...  (Ctrl+Shift+S)", self.main_window.save_file_as)
@@ -35,6 +36,7 @@ class ActionMenuPopup(QFrame):
         sep.setFixedHeight(1)
         layout.addWidget(sep)
 
+        add_item("Экспорт отчёта (HTML / PDF)...", self.main_window.export_report)
         add_item("Рабочая папка (.gps / .lis)", self.main_window.open_work_directory)
         add_item("Настройки...", self.main_window.open_settings)
 

@@ -1,10 +1,11 @@
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QEvent
 from PySide6.QtGui import QColor, QTextFormat, QTextCursor
-from PySide6.QtWidgets import QPlainTextEdit, QTextEdit
+from PySide6.QtWidgets import QPlainTextEdit, QTextEdit, QToolTip
 
 from app.consts import GPSS_CORE_KEYWORDS
 from app.editor.highlighter import GPSSHighlighter
 from app.editor.label_gutter import LabelGutter
+from app.editor.completer import GPSSCompleter, GPSS_BLOCK_DOCS
 from app.widgets.text import BlockUserData
 
 
@@ -17,20 +18,61 @@ class GPSSCodeEditor(QPlainTextEdit):
         self.setObjectName("code_editor")
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
         self.theme = "dark"
+        self.error_lines = {}
         self.gutter = LabelGutter(self)
         self.highlighter = GPSSHighlighter(self.document(), theme=self.theme)
+
+        # Автодополнение кода (IntelliSense)
+        self.completer = GPSSCompleter(self)
+        self.completer.setWidget(self)
+        self.completer.activated.connect(self.insert_completion)
+        self.completer.apply_style(self.theme)
 
         self.blockCountChanged.connect(self.update_gutter_width)
         self.updateRequest.connect(self.update_gutter)
         self.cursorPositionChanged.connect(self.highlight_current_line)
+        self.textChanged.connect(self._on_text_changed)
         self.update_gutter_width(0)
+
+    def _on_text_changed(self):
+        if self.error_lines:
+            self.error_lines = {}
+            self.highlight_current_line()
+            self.gutter.update()
 
     def set_theme(self, theme):
         self.theme = theme
         self.highlighter.set_theme(theme)
         self.gutter.update_inline_style()
         self.gutter.update()
+        if hasattr(self, "completer") and self.completer:
+            self.completer.apply_style(theme)
         self.highlight_current_line()
+
+    def set_error_lines(self, errors):
+        self.error_lines = {}
+        if isinstance(errors, list):
+            for item in errors:
+                line = item.get("line", 1)
+                self.error_lines[line] = item.get("message", "Синтаксическая ошибка")
+        elif isinstance(errors, dict):
+            self.error_lines = dict(errors)
+        self.highlight_current_line()
+        self.gutter.update()
+
+    def clear_errors(self):
+        if self.error_lines:
+            self.error_lines = {}
+            self.highlight_current_line()
+            self.gutter.update()
+
+    def goto_line(self, line_no):
+        block = self.document().findBlockByNumber(max(0, line_no - 1))
+        if block.isValid():
+            cursor = QTextCursor(block)
+            self.setTextCursor(cursor)
+            self.centerCursor()
+            self.setFocus()
 
     def gutter_width(self):
         return self.gutter.total_width()
@@ -54,14 +96,31 @@ class GPSSCodeEditor(QPlainTextEdit):
 
     def highlight_current_line(self):
         extra_selections = []
+        is_dark = (self.theme == "dark")
+
+        # Подсветка строк с ошибками компилятора
+        if hasattr(self, "error_lines") and self.error_lines:
+            err_bg = QColor("#491818" if is_dark else "#ffebe9")
+            for line_no, msg in self.error_lines.items():
+                b = self.document().findBlockByNumber(line_no - 1)
+                if b.isValid():
+                    sel = QTextEdit.ExtraSelection()
+                    sel.format.setBackground(err_bg)
+                    sel.format.setProperty(QTextFormat.FullWidthSelection, True)
+                    sel.cursor = QTextCursor(b)
+                    sel.cursor.clearSelection()
+                    extra_selections.append(sel)
+
+        # Подсветка текущей строки
         if not self.isReadOnly():
             selection = QTextEdit.ExtraSelection()
-            line_color = QColor("#161d21" if self.theme == "dark" else "#eef3f8")
+            line_color = QColor("#161d21" if is_dark else "#eef3f8")
             selection.format.setBackground(line_color)
             selection.format.setProperty(QTextFormat.FullWidthSelection, True)
             selection.cursor = self.textCursor()
             selection.cursor.clearSelection()
             extra_selections.append(selection)
+
         self.setExtraSelections(extra_selections)
 
     def load_code(self, text):
@@ -237,7 +296,85 @@ class GPSSCodeEditor(QPlainTextEdit):
         cursor.endEditBlock()
         self.gutter.update()
 
+    def text_under_cursor(self):
+        tc = self.textCursor()
+        line = tc.block().text()
+        col = tc.positionInBlock()
+        if col == 0:
+            return ""
+        start = col
+        while start > 0 and (line[start - 1].isalnum() or line[start - 1] in ("$", "_")):
+            start -= 1
+        return line[start:col]
+
+    def insert_completion(self, completion):
+        if not completion:
+            return
+        tc = self.textCursor()
+        prefix = self.text_under_cursor()
+        tc.movePosition(QTextCursor.Left, QTextCursor.KeepAnchor, len(prefix))
+        tc.insertText(completion)
+        self.setTextCursor(tc)
+
+    def _trigger_completer(self, force=False):
+        if not hasattr(self, "completer") or not self.completer:
+            return
+        prefix = self.text_under_cursor()
+        if not force and len(prefix) < 2:
+            if self.completer.popup().isVisible():
+                self.completer.popup().hide()
+            return
+
+        self.completer.update_words(self.toPlainText())
+
+        if prefix != self.completer.completionPrefix():
+            self.completer.setCompletionPrefix(prefix)
+            self.completer.popup().setCurrentIndex(self.completer.completionModel().index(0, 0))
+
+        cr = self.cursorRect()
+        popup = self.completer.popup()
+        cr.setWidth(popup.sizeHintForColumn(0) + popup.verticalScrollBar().sizeHint().width() + 30)
+        self.completer.complete(cr)
+
+    def event(self, event):
+        if event.type() == QEvent.ToolTip:
+            pos = event.pos()
+            cursor = self.cursorForPosition(pos)
+            cursor.select(QTextCursor.WordUnderCursor)
+            word = cursor.selectedText().strip().upper()
+            if word in GPSS_BLOCK_DOCS:
+                QToolTip.showText(event.globalPos(), GPSS_BLOCK_DOCS[word], self)
+                return True
+            else:
+                block_num = cursor.block().blockNumber() + 1
+                if hasattr(self, "error_lines") and block_num in self.error_lines:
+                    QToolTip.showText(event.globalPos(), f"Ошибка в строке {block_num}:\n{self.error_lines[block_num]}", self)
+                    return True
+                QToolTip.hideText()
+        return super().event(event)
+
     def keyPressEvent(self, event):
+        if hasattr(self, "completer") and self.completer and self.completer.popup().isVisible():
+            if event.key() in (Qt.Key_Enter, Qt.Key_Return):
+                cur_comp = self.completer.currentCompletion()
+                if cur_comp:
+                    self.insert_completion(cur_comp)
+                    self.completer.popup().hide()
+                    return
+            elif event.key() in (Qt.Key_Tab, Qt.Key_Backtab):
+                cur_comp = self.completer.currentCompletion()
+                if cur_comp:
+                    self.insert_completion(cur_comp)
+                    self.completer.popup().hide()
+                    return
+            elif event.key() == Qt.Key_Escape:
+                self.completer.popup().hide()
+                event.accept()
+                return
+
+        if event.modifiers() == Qt.ControlModifier and event.key() == Qt.Key_Space:
+            self._trigger_completer(force=True)
+            return
         if event.key() == Qt.Key_Home:
             cursor = self.textCursor()
             pos = cursor.position()
@@ -282,6 +419,9 @@ class GPSSCodeEditor(QPlainTextEdit):
             return
 
         super().keyPressEvent(event)
+
+        if event.text() and (event.text().isalnum() or event.text() in ("$", "_")):
+            self._trigger_completer(force=False)
 
     def wheelEvent(self, event):
         if event.modifiers() & Qt.ControlModifier:

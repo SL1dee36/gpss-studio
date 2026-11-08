@@ -17,11 +17,13 @@ class GPSSListingParser:
         self.storages = []
         self.blocks = []
         self.random_streams = []
+        self.errors = []
         self.parse()
 
     def parse(self):
         state = None
         block_col_pos = []
+        last_source_line = None
 
         for idx, line in enumerate(self.lines):
             line_no = idx + 1
@@ -29,6 +31,32 @@ class GPSSListingParser:
             # Создаем верхнерегистровую копию для проверок
             line_upper = line.upper()
             s_upper = s.upper()
+
+            # Отслеживаем номер строки исходного кода из колонки Line#
+            m_src = re.match(r"^\s*(\d+)\s+(\d+)\s+", line)
+            if m_src:
+                try:
+                    last_source_line = int(m_src.group(1))
+                except ValueError:
+                    pass
+
+            # Ошибки компилятора: *** ERROR
+            if "*** ERROR" in line_upper:
+                err_clean = re.sub(r"^\*+\s*", "", s)
+                self.errors.append({
+                    "line": last_source_line or 1,
+                    "message": err_clean,
+                    "listing_line": line_no
+                })
+
+            # Ошибки неопределенных сущностей из таблицы символов
+            m_undef = re.match(r"^\s*([A-Za-z0-9_]+)\s+UNDEF\s+\S+\s+(\d+)", line)
+            if m_undef:
+                self.errors.append({
+                    "line": int(m_undef.group(2)),
+                    "message": f"Неопределённая сущность '{m_undef.group(1)}'",
+                    "listing_line": line_no
+                })
 
             if "GPSS/H RELEASE" in line_upper and not self.header_info:
                 # Для регулярки используем флаг IGNORECASE
@@ -251,3 +279,7 @@ class GPSSListingParser:
                             "sample_count": parts[4],
                             "chi_square": parts[5] if len(parts) > 5 else "N/A"
                         })
+
+    @property
+    def has_errors(self):
+        return len(self.errors) > 0

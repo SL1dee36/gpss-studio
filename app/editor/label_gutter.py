@@ -78,8 +78,12 @@ class LabelGutter(QWidget):
 
         while block.isValid() and top <= event.rect().bottom():
             if block.isVisible() and bottom >= event.rect().top():
+                is_error = hasattr(self.editor, "error_lines") and (block_num in self.editor.error_lines)
                 if self.show_line_numbers:
-                    painter.setPen(pen_line_num)
+                    if is_error:
+                        painter.setPen(QColor("#ff5555" if is_dark else "#cf222e"))
+                    else:
+                        painter.setPen(pen_line_num)
                     num_rect = QRect(0, top, line_w - 6, fm.height())
                     painter.drawText(num_rect, Qt.AlignRight | Qt.AlignVCenter, str(block_num))
 
@@ -92,6 +96,11 @@ class LabelGutter(QWidget):
                 else:
                     painter.setPen(pen_empty)
                     painter.drawText(lbl_rect, Qt.AlignCenter, "_ _")
+
+                if is_error:
+                    # Маркер ошибки в gutter
+                    painter.setPen(QColor("#ff5555" if is_dark else "#cf222e"))
+                    painter.drawText(QRect(total_w - 10, top, 8, fm.height()), Qt.AlignCenter, "●")
 
             block = block.next()
             top = bottom

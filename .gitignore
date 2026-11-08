@@ -9,4 +9,5 @@ settings.json
 *.build
 *.dist
 *.onefile-build
-GPSSStudioV2.py
+builder/build/
+builder/dist/

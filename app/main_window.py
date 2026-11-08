@@ -33,6 +33,8 @@ from app.style.light import STYLE_SHEET_LIGHT
 from app.util import get_monospace_font, get_ui_font, filter_table
 from app.widgets.action_menu import ActionMenuPopup
 from app.widgets.settings_dialog import SettingsDialog
+from app.widgets.templates_dialog import TemplatesDialog
+from app.widgets.report_exporter import ReportExporter
 from app.widgets.tables import ClickableTableWidget
 from root import get_app_dir, get_resource_path
 
@@ -170,6 +172,11 @@ class GPSSStudio(QMainWindow):
         if hasattr(self, "charts_widget"):
             self.charts_widget.set_theme(theme)
 
+        if hasattr(self, "lis_viewer"):
+            text = self.lis_viewer.toPlainText()
+            if text and ("GPSS" in text or "FACILITY" in text or "STORAGE" in text or "BLOCK" in text):
+                self._parse_and_fill_summary(text)
+
         if hasattr(self, "lbl_status_theme"):
             self.lbl_status_theme.setText(f"Тема: {'Светлая' if theme == 'light' else 'Тёмная'}")
         if hasattr(self, "lbl_status_zoom"):
@@ -220,8 +227,22 @@ class GPSSStudio(QMainWindow):
         self.btn_reset.setFocusPolicy(Qt.NoFocus)
         self.btn_reset.clicked.connect(self.reset_model)
 
+        self.btn_templates = QPushButton("Шаблоны")
+        self.btn_templates.setObjectName("btn_templates")
+        self.btn_templates.setFixedHeight(32)
+        self.btn_templates.setToolTip("Создать модель из готового шаблона (СМО)")
+        self.btn_templates.setFocusPolicy(Qt.NoFocus)
+        self.btn_templates.clicked.connect(self.open_templates)
+
+        self.btn_report = QPushButton("Отчёт (HTML)")
+        self.btn_report.setObjectName("btn_report")
+        self.btn_report.setFixedHeight(32)
+        self.btn_report.setToolTip("Сформировать научно-технический отчёт о моделировании в HTML / PDF")
+        self.btn_report.setFocusPolicy(Qt.NoFocus)
+        self.btn_report.clicked.connect(self.export_report)
+
         self.lbl_status = QLabel(f"Рабочая папка: {self.work_dir}")
-        self.lbl_status.setStyleSheet("color: #7a8c9e; margin-left: 6px; font-size: 11px;")
+        self.lbl_status.setObjectName("lbl_top_status")
 
         self.btn_menu = QPushButton("menu")
         self.btn_menu.setObjectName("btn_menu")
@@ -241,6 +262,8 @@ class GPSSStudio(QMainWindow):
 
         top_layout.addWidget(self.btn_run)
         top_layout.addWidget(self.btn_reset)
+        top_layout.addWidget(self.btn_templates)
+        top_layout.addWidget(self.btn_report)
         top_layout.addWidget(self.lbl_status)
         top_layout.addStretch()
         top_layout.addWidget(self.btn_menu)
@@ -830,6 +853,24 @@ class GPSSStudio(QMainWindow):
         self.reset_right_frame()
         self.lbl_status_msg.setText("Модель и результаты сброшены")
 
+    def open_templates(self):
+        if not self.maybe_save_changes():
+            return
+        dialog = TemplatesDialog(self)
+        if dialog.exec() and dialog.selected_code:
+            self.editor.load_code(dialog.selected_code)
+            self.current_file_path = None
+            self.editor.document().setModified(True)
+            self._update_window_title()
+            self._refresh_flowchart_from_editor()
+            self.lbl_status_msg.setText("Загружен шаблон модели")
+
+    def export_report(self):
+        model_name = os.path.basename(self.current_file_path) if self.current_file_path else "Новая модель"
+        code = self.editor.get_formatted_code(target_os=self.target_os)
+        parser = getattr(self, "_last_parser", None)
+        ReportExporter.export_report_dialog(self, model_name, code, parser)
+
     def open_work_directory(self):
         if not os.path.exists(self.work_dir):
             try:
@@ -919,6 +960,29 @@ class GPSSStudio(QMainWindow):
 
         code = self.editor.get_formatted_code(target_os=self.target_os)
 
+        # Предварительная статическая проверка кода (Linter)
+        if re.search(r"^\s*SIMULATE\b", code, re.IGNORECASE | re.MULTILINE):
+            res = QMessageBox.warning(
+                self, "Устаревший оператор SIMULATE",
+                "В тексте модели обнаружен устаревший оператор SIMULATE.\n"
+                "В Wolverine GPSS/H он не поддерживается и вызывает фатальную ошибку ERROR 4.\n\n"
+                "Продолжить запуск всё равно?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            if res != QMessageBox.Yes:
+                return
+
+        if not re.search(r"^\s*START\s+\d+", code, re.IGNORECASE | re.MULTILINE):
+            res = QMessageBox.warning(
+                self, "Отсутствует директива START",
+                "В модели не найдена управляющая команда START (например, START 1000).\n"
+                "Без неё симуляция завершится без выполнения транзактов.\n\n"
+                "Продолжить запуск?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+            if res != QMessageBox.Yes:
+                return
+
         # Write model.gps with robust encoding handling
         written = False
         enc_list = ["cp866", "windows-1251", "utf-8"] if self.target_os == "windows" else ["utf-8", "latin-1", "cp866"]
@@ -989,19 +1053,37 @@ class GPSSStudio(QMainWindow):
             self.lis_viewer.setPlainText(lis_text)
             self._parse_and_fill_summary(lis_text)
             self._refresh_flowchart_from_editor()
-            if self.config.get("switch_to_first_tab_after_simulating", False):
-                self.tabs.setCurrentIndex(0)
-            self.lbl_status_msg.setText("Симуляция успешно завершена")
+
+            p = getattr(self, "_last_parser", None)
+            if p and p.has_errors:
+                self.editor.set_error_lines(p.errors)
+                first_err = p.errors[0]
+                self.editor.goto_line(first_err["line"])
+                self.lbl_status_msg.setText(f"Обнаружено ошибок: {len(p.errors)}. Строка {first_err['line']}: {first_err['message']}")
+            else:
+                self.editor.clear_errors()
+                if self.config.get("switch_to_first_tab_after_simulating", False):
+                    self.tabs.setCurrentIndex(0)
+                self.lbl_status_msg.setText("Симуляция успешно завершена")
         else:
             if lis_text:
                 self.lis_viewer.setPlainText(lis_text)
                 self._parse_and_fill_summary(lis_text)
             else:
                 self.lis_viewer.setPlainText(f"Листинг недоступен.\n{err_msg}")
-            self.tabs.setCurrentIndex(4)
-            short_err = err_msg.split("\n")[0] if err_msg else "Ошибка запуска"
-            self.lbl_status_msg.setText(f"Ошибка: {short_err}")
-            QMessageBox.warning(self, "Результат симуляции", err_msg or "Произошла ошибка при выполнении модели.")
+
+            p = getattr(self, "_last_parser", None)
+            if p and p.has_errors:
+                self.editor.set_error_lines(p.errors)
+                first_err = p.errors[0]
+                self.editor.goto_line(first_err["line"])
+                self.lbl_status_msg.setText(f"Ошибка компиляции (строка {first_err['line']}): {first_err['message']}")
+                self.tabs.setCurrentIndex(1)  # Переключить на Листинг (.lis)
+            else:
+                self.tabs.setCurrentIndex(4)  # Консоль
+                short_err = err_msg.split("\n")[0] if err_msg else "Ошибка запуска"
+                self.lbl_status_msg.setText(f"Ошибка: {short_err}")
+                QMessageBox.warning(self, "Результат симуляции", err_msg or "Произошла ошибка при выполнении модели.")
 
     def _populate_key_value_table(self, table, data):
         table.setRowCount(len(data))
@@ -1166,7 +1248,10 @@ class GPSSStudio(QMainWindow):
                 if col == 1:
                     it.setForeground(QColor("#bcdfff" if self.theme == "dark" else "#0969da"))
                 elif col == 4:
-                    it.setForeground(QColor("#7ee787" if f['status'] == 'AVAIL' else "#ffa657"))
+                    if self.theme == "dark":
+                        it.setForeground(QColor("#7ee787" if f['status'] == 'AVAIL' else "#ffa657"))
+                    else:
+                        it.setForeground(QColor("#1a7f37" if f['status'] == 'AVAIL' else "#b78103"))
                 self.fac_table.setItem(row, col, it)
 
         self.q_table.setRowCount(len(p.queues))
@@ -1220,6 +1305,11 @@ class GPSSStudio(QMainWindow):
                         it.setTextAlignment(Qt.AlignCenter)
                     if col in (1, 2, 3, 4, 5):
                         it.setForeground(QColor("#bcdfff" if self.theme == "dark" else "#0969da"))
+                    elif col == 6:
+                        if self.theme == "dark":
+                            it.setForeground(QColor("#7ee787" if s['status'] == 'AVAIL' else "#ffa657"))
+                        else:
+                            it.setForeground(QColor("#1a7f37" if s['status'] == 'AVAIL' else "#b78103"))
                     self.storage_table.setItem(row, col, it)
         else:
             self.storage_table.setRowCount(0)
