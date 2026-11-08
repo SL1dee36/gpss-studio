@@ -1,7 +1,6 @@
 # Description: Lightweight desktop IDE and simulation runner for Wolverine Software GPSS/H
 # Author: Nazaryan Artem @Sl1dee36
 # Date: 27.09.2026
-# Current version: v1.6.1
 # License: MIT
 
 import os
@@ -17,7 +16,7 @@ def main():
     if sys.platform == "win32":
         try:
             import ctypes
-            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("sl1dee36.gpssstudio.ide.1.6.1")
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("sl1dee36.gpssstudio.ide.1.7.0")
         except Exception:
             pass
 

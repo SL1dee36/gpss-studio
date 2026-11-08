@@ -31,8 +31,8 @@ BUILD_DIR = os.path.join(BUILDER_DIR, "build")
 
 APP_NAME = "gpss-studio"
 APP_TITLE = "GPSS Studio"
-VERSION = "1.6.2"
-VERSION_TUPLE = "1.6.2.0"
+VERSION = "1.7.0"
+VERSION_TUPLE = "1.7.0.0"
 COMPANY = "SL1dee36"
 COPYRIGHT = "Copyright (c) 2026 Nazaryan Artem. MIT License."
 
