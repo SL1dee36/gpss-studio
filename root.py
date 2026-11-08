@@ -3,8 +3,8 @@ import sys
 
 
 def get_app_dir():
-    if "__compiled__" in globals():
-        c = globals()["__compiled__"]
+    c = getattr(sys.modules.get("__main__"), "__compiled__", None)
+    if c is not None:
         if hasattr(c, "containing_dir") and c.containing_dir:
             return os.path.abspath(c.containing_dir)
         if hasattr(c, "original_argv0") and c.original_argv0:

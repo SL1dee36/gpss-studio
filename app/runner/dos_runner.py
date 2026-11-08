@@ -79,7 +79,7 @@ class DosRunner(IRunner):
         return text
 
     def set_runner_path_from_config(self, config):
-        path = config.get("executable_path", "")
+        path = config.get("dos_executable_path", "")
         self.dosbox_path = self.check_dosbox_file(path)
 
     def run_gps(
@@ -96,10 +96,10 @@ class DosRunner(IRunner):
         self.thread.start()
 
     def stop(self):
-        if self.thread and not self.is_running():
+        if self.thread and self.is_running():
             self.thread.cancel()
 
     def enshure_stop(self):
-        if self.thread and not self.is_running():
+        if self.thread and self.is_running():
             self.thread.cancel()
             self.thread.wait(1500)

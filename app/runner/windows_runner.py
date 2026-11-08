@@ -67,10 +67,10 @@ class WindowsRunner(IRunner):
         self.thread.start()
 
     def stop(self):
-        if self.thread and not self.is_running():
+        if self.thread and self.is_running():
             self.thread.cancel()
 
     def enshure_stop(self):
-        if self.thread and not self.is_running():
+        if self.thread and self.is_running():
             self.thread.cancel()
             self.thread.wait(1500)

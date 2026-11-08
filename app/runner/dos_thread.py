@@ -37,9 +37,14 @@ class DosBoxSimulationThread(ISimulationThread):
     def run(self):
         self.status_updated.emit("Подготовка к запуску DOSBox...")
         dosbox_gpssh_root = os.path.join(self.mount_path, "GPSSH")
+        dosbox_lis_file = os.path.join(dosbox_gpssh_root, "MODEL.LIS")
 
         # Помещаем GPS файл в диск DOSBox
         shutil.copy2(self.gps_file, dosbox_gpssh_root)
+
+        # Удаляем старый lis файл, чтобы не подхватить его в случае ошибки
+        if os.path.exists(dosbox_lis_file):
+            os.remove(os.path.join(self.mount_path, dosbox_lis_file))
 
         # Команды для выполнения внутри DOSBox
         commands = [
@@ -98,7 +103,6 @@ class DosBoxSimulationThread(ISimulationThread):
         retcode = self._process.returncode if self._process else 0
 
         # Проверяем, создался ли файл листинга
-        dosbox_lis_file = os.path.join(dosbox_gpssh_root, "MODEL.LIS")
         if os.path.exists(dosbox_lis_file):
             # Забираем LIS файл с диска DOSBox
             shutil.copy2(dosbox_lis_file, self.lis_file)

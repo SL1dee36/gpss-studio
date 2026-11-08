@@ -85,7 +85,7 @@ class GPSSStudio(QMainWindow):
 
     def load_startup_file(self):
         last_opened = self.config.get("last_opened_file")
-        if os.path.exists(last_opened):
+        if last_opened and os.path.exists(last_opened):
             try:
                 with open(last_opened, "r", encoding="utf-8", errors="replace") as f:
                     c = f.read()
@@ -725,7 +725,7 @@ class GPSSStudio(QMainWindow):
 
         path, _ = QFileDialog.getOpenFileName(
             self, "Открыть модель GPSS",
-            os.path.dirname(self.current_file_path),
+            os.path.dirname(self.current_file_path) if self.current_file_path else get_app_dir(),
             "Модели GPSS (*.gps *.txt *.dat);;Все файлы (*.*)"
         )
         if not path:
@@ -754,7 +754,7 @@ class GPSSStudio(QMainWindow):
     def save_file_as(self):
         path, _ = QFileDialog.getSaveFileName(
             self, "Сохранить модель как...",
-            os.path.dirname(self.current_file_path),
+            os.path.dirname(self.current_file_path) if self.current_file_path else get_app_dir(),
             "Модели GPSS (*.gps);;Все файлы (*.*)"
         )
         if not path:
